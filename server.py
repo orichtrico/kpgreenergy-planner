@@ -203,19 +203,20 @@ async def handle_webhook(request: Request):
     except:
         body = {}
     
-    action = body.get("action") or body.get("event")
+    action = body.get("action") or body.get("event") or ""
     
-    if action == "update_milestone":
+    # 1. Update from LINE LIFF or explicit API
+    if action in ["update_milestone", "save_progress"]:
         p_id = body.get("project_id")
-        p_name = body.get("project_name")
-        m_name = body.get("milestone_name")
+        p_name = body.get("project_name", "").strip().lower()
+        m_name = body.get("milestone_name", "").strip()
         pct = float(body.get("actual_pct", 0.0))
         if pct > 1.0:
             pct = pct / 100.0
         
         if not p_id and p_name:
             for p in engine.projects:
-                if p["name"].strip().lower() == p_name.strip().lower():
+                if p["name"].strip().lower() == p_name:
                     p_id = p["id"]
                     break
         
@@ -227,7 +228,33 @@ async def handle_webhook(request: Request):
                 actual_start=body.get("actual_start"),
                 actual_finish=body.get("actual_finish")
             )
-            return {"status": "ok", "updated": eng_res}
+            return {"status": "ok", "updated": eng_res, "project_id": p_id}
+
+    # 2. Live Edit Trigger directly from Google Sheets (onEdit)
+    if action in ["sheet_edited", "on_edit"]:
+        p_name = str(body.get("project_name", "")).strip().lower()
+        m_name = str(body.get("milestone_name", "")).strip()
+        val_str = str(body.get("new_value", "0")).replace("%", "").strip()
+        try:
+            val_pct = float(val_str)
+            if val_pct > 1.0:
+                val_pct = val_pct / 100.0
+        except:
+            val_pct = 0.0
+            
+        p_id = None
+        for p in engine.projects:
+            if p["name"].strip().lower() == p_name or p_name in p["name"].strip().lower():
+                p_id = p["id"]
+                break
+                
+        if p_id and m_name:
+            eng_res = engine.update_milestone(
+                project_id=p_id,
+                milestone_name=m_name,
+                actual_pct=val_pct
+            )
+            return {"status": "ok", "updated": eng_res, "project_id": p_id, "new_pct": val_pct}
             
     return {"status": "received", "body": body}
 
@@ -239,7 +266,7 @@ async def sync_google_sheet(request: Request):
         if not raw_url:
             raise HTTPException(status_code=400, detail="กรุณาระบุลิงก์ Google Sheet หรือ Web App URL")
         
-        # 1. Check if it is a standard Google Sheet Link (https://docs.google.com/spreadsheets/d/...):
+        # 1. Handle Google Sheets Document Link (https://docs.google.com/spreadsheets/d/...)
         sheet_match = re.search(r'/spreadsheets/d/([a-zA-Z0-9-_]+)', raw_url)
         if sheet_match:
             sheet_id = sheet_match.group(1)
@@ -247,14 +274,14 @@ async def sync_google_sheet(request: Request):
             headers = {"User-Agent": "Mozilla/5.0"}
             
             try:
-                r_prog = requests.get(prog_csv_url, headers=headers, timeout=12)
+                r_prog = requests.get(prog_csv_url, headers=headers, timeout=15)
             except Exception as e:
-                raise HTTPException(status_code=502, detail=f"ไม่สามารถเชื่อมต่อ Google Sheets: {str(e)}")
+                raise HTTPException(status_code=502, detail=f"ไม่สามารถเชื่อมต่อ Google Sheets ได้: {str(e)}")
                 
             if r_prog.status_code != 200 or ("html" in r_prog.headers.get("Content-Type", "") and "<html" in r_prog.text.lower()):
                 raise HTTPException(
                     status_code=403, 
-                    detail="Google Sheet ยังไม่ได้เปิดสิทธิ์แชร์! กรุณาเปิด Google Sheet กดปุ่ม 'แชร์ (Share)' ด้านขวาบน > เลือก 'ทุกคนที่มีลิงก์ (Anyone with the link)' ให้เป็น 'ผู้มีสิทธิ์อ่าน (Viewer)' แล้วกดซิงค์ใหม่อีกครั้งครับ"
+                    detail="Google Sheet ยังไม่ได้เปิดสิทธิ์แชร์! กรุณาเปิด Google Sheet แล้วกดปุ่ม 'แชร์ (Share)' ด้านบนขวา > เลือก 'ทุกคนที่มีลิงก์ (Anyone with link)' ให้เป็น 'ผู้มีสิทธิ์อ่าน (Viewer)' แล้วกดซิงค์ใหม่อีกครั้งครับ"
                 )
                 
             csv_text = r_prog.text
@@ -304,13 +331,13 @@ async def sync_google_sheet(request: Request):
             engine.save_to_cache()
             return {
                 "success": True, 
-                "message": f"ซิงค์ข้อมูลจาก Google Sheets สำเร็จเรียบร้อย ({updated_count} โครงการ)"
+                "message": f"ซิงค์ข้อมูลจาก Google Sheets สำเร็จเรียบร้อยแล้ว ({updated_count} โครงการ)"
             }
 
-        # 2. Otherwise handle as Google Apps Script Web App URL
+        # 2. Handle Google Apps Script Web App URL
         headers = {"User-Agent": "Mozilla/5.0"}
         try:
-            resp = requests.get(raw_url, headers=headers, timeout=12, allow_redirects=True)
+            resp = requests.get(raw_url, headers=headers, timeout=15, allow_redirects=True)
         except Exception as net_err:
             raise HTTPException(status_code=502, detail=f"ไม่สามารถเชื่อมต่อ Web App URL: {str(net_err)}")
             
@@ -318,7 +345,7 @@ async def sync_google_sheet(request: Request):
         if "accounts.google.com" in resp.url or ("text/html" in content_type and "<!DOCTYPE html>" in resp.text):
             raise HTTPException(
                 status_code=403,
-                detail="Google Sheet ติดสิทธิ์การเข้าถึง! คุณสามารถใส่ 'ลิงก์ของ Google Sheet' ปกติ (https://docs.google.com/spreadsheets/d/...) แทนได้เลย สะดวกและรวดเร็วกว่าครับ"
+                detail="Google Sheet ติดสิทธิ์การเข้าถึง! คุณสามารถใส่ 'ลิงก์ของ Google Sheet' ปกติ (https://docs.google.com/spreadsheets/d/...) แทนได้เลยครับ สะดวกและเร็วกว่า"
             )
             
         try:
@@ -348,7 +375,7 @@ async def sync_google_sheet(request: Request):
         engine.save_to_cache()
         return {
             "success": True, 
-            "message": f"ซิงค์ข้อมูลจาก Google Sheets สำเร็จเรียบร้อย ({updated_count} โครงการ)"
+            "message": f"ซิงค์ข้อมูลจาก Google Sheets สำเร็จเรียบร้อยแล้ว ({updated_count} โครงการ)"
         }
         
     except HTTPException:

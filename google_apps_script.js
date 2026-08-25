@@ -1,13 +1,56 @@
 /**
  * =========================================================================
- * ⚡ KPGreenergy Planner - 2-Way Sync Engine (Ultra-Fast Version)
+ * ⚡ KPGreenergy Planner - 2-Way Sync Engine (Complete Real-Time Edition)
  * =========================================================================
  */
 
+// ใส่ URL ของ Web Dashboard ของคุณที่นี่ (เพื่อซิงค์ข้อมูลสดอัตโนมัติ)
 const WEBHOOK_DASHBOARD_URL = "https://kpgreenergy-planner.onrender.com/api/webhook";
 
 /**
- * 1. GET Request: ส่งข้อมูลออกเป็น JSON แบบความเร็วสูง (Sub-second)
+ * 1. onEdit Trigger: เมื่อคุณพิมพ์แก้ % ใน Google Sheet ระบบจะส่งข้อมูลไปอัปเดตหน้าเว็บทันที!
+ */
+function onEdit(e) {
+  try {
+    if (!e || !e.range) return;
+    const sheet = e.range.getSheet();
+    const sheetName = sheet.getName();
+    
+    // ทำงานเฉพาะชีต 'data Progress'
+    if (sheetName === "data Progress") {
+      const row = e.range.getRow();
+      const col = e.range.getColumn();
+      const value = e.value !== undefined ? e.value : e.range.getValue();
+
+      // แถวข้อมูลโครงการเริ่มตั้งแต่แถว 5, คอลัมน์ Milestone เริ่มตั้งแต่คอลัมน์ H (8)
+      if (row >= 5 && col >= 8) {
+        const prjName = sheet.getRange(row, 3).getValue(); // Col C = ชื่อโครงการ
+        
+        // หาคอลัมน์เริ่มต้นของ Milestone (Col H, K, N, ...)
+        const headerCol = Math.floor((col - 8) / 3) * 3 + 8;
+        const milestoneName = sheet.getRange(3, headerCol).getValue(); // แถว 3 = ชื่อ Milestone
+
+        // ตรวจสอบว่าแก้ในช่อง % Progress (Col J, M, P...)
+        const isPctCol = ((col - 8) % 3 === 2);
+        
+        if (prjName && milestoneName && isPctCol) {
+          notifyWebDashboard({
+            action: "sheet_edited",
+            sheet: sheetName,
+            project_name: String(prjName),
+            milestone_name: String(milestoneName),
+            new_value: value
+          });
+        }
+      }
+    }
+  } catch (err) {
+    console.error("onEdit error: " + err);
+  }
+}
+
+/**
+ * 2. GET Request: ดึงข้อมูลเป็น JSON ความเร็วสูง
  */
 function doGet(e) {
   try {
@@ -28,11 +71,9 @@ function doGet(e) {
       return createJsonResponse({ status: "success", total_projects: 0, projects: [] });
     }
 
-    // อ่านข้อมูลแบบ Batch รวดเดียว (เฉพาะแถวและคอลัมน์ที่มีข้อมูลจริง)
     const planData = planSheet.getRange(1, 1, planLastRow, planLastCol).getValues();
     const progData = progSheet.getRange(1, 1, progLastRow, progLastCol).getValues();
 
-    // ดึงรายชื่อ Milestones จาก Header แถวที่ 3 (Index 2)
     const headerRow3 = planData[2];
     const milestones = [];
     for (let c = 7; c < headerRow3.length; c += 3) {
@@ -42,7 +83,6 @@ function doGet(e) {
       }
     }
 
-    // สร้าง Map ของ Progress เพื่อการค้นหาทันที
     const progMap = {};
     for (let r = 4; r < progData.length; r++) {
       const pName = String(progData[r][2] || "").trim();
@@ -107,7 +147,7 @@ function doGet(e) {
 }
 
 /**
- * 2. POST Request: รับข้อมูลอัปเดตจาก LINE LIFF / Web
+ * 3. POST Request: รับข้อมูลอัปเดตจาก LINE LIFF / Web
  */
 function doPost(e) {
   try {
@@ -135,7 +175,6 @@ function doPost(e) {
     const lastCol = progSheet.getLastColumn();
     const progData = progSheet.getRange(1, 1, lastRow, lastCol).getValues();
 
-    // 1. หาแถวโครงการ
     let targetRow = -1;
     for (let r = 4; r < progData.length; r++) {
       if (String(progData[r][2] || "").trim().toLowerCase() === projectName.toLowerCase()) {
@@ -148,7 +187,6 @@ function doPost(e) {
       return createJsonResponse({ status: "error", message: "ไม่พบโครงการ: " + projectName });
     }
 
-    // 2. หาคอลัมน์ Milestone
     const headerRow3 = progData[2];
     let targetCol = -1;
     for (let c = 7; c < headerRow3.length; c += 3) {
@@ -163,12 +201,10 @@ function doPost(e) {
       return createJsonResponse({ status: "error", message: "ไม่พบคอลัมน์ Milestone: " + milestoneName });
     }
 
-    // 3. เขียนค่าลงเซลล์
     if (actualStart) progSheet.getRange(targetRow, targetCol).setValue(actualStart);
     if (actualFinish) progSheet.getRange(targetRow, targetCol + 1).setValue(actualFinish);
     progSheet.getRange(targetRow, targetCol + 2).setValue(actualPct);
 
-    // 4. บันทึก Log
     if (logSheet) {
       const nowStr = Utilities.formatDate(new Date(), "Asia/Bangkok", "yyyy-MM-dd HH:mm:ss");
       logSheet.appendRow([nowStr, updatedBy, projectName, milestoneName, (actualPct * 100).toFixed(0) + "%", actualStart, actualFinish, note, "2-Way API"]);
@@ -184,8 +220,18 @@ function doPost(e) {
   }
 }
 
-function onEdit(e) {
-  // Trigger onEdit webhook if configured
+function notifyWebDashboard(payload) {
+  if (!WEBHOOK_DASHBOARD_URL || WEBHOOK_DASHBOARD_URL.includes("your-dashboard")) return;
+  try {
+    UrlFetchApp.fetch(WEBHOOK_DASHBOARD_URL, {
+      method: "post",
+      contentType: "application/json",
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    });
+  } catch (e) {
+    console.warn("Webhook notify error: " + e);
+  }
 }
 
 function formatSimpleDate(val) {
