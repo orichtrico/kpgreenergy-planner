@@ -2,7 +2,7 @@ import os
 import json
 from datetime import datetime, date
 from typing import Optional, List
-from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 from engine import ProjectEngine
 
-app = FastAPI(title="Solar Project Management Dashboard", version="1.0.0")
+app = FastAPI(title="KPGreenergy Planner", version="1.0.0")
 
 # Enable CORS
 app.add_middleware(
@@ -25,23 +25,22 @@ app.add_middleware(
 engine = ProjectEngine()
 
 # Ensure static directory exists
-STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+STATIC_DIR = os.path.join(BASE_DIR, "static")
 os.makedirs(STATIC_DIR, exist_ok=True)
+
+# Mount static files
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 # Pydantic models for requests
 class MilestoneUpdateRequest(BaseModel):
     project_id: str
     milestone_name: str
-    actual_pct: float # 0.0 to 1.0 or 0 to 100
+    actual_pct: float
     actual_start: Optional[str] = None
     actual_finish: Optional[str] = None
     note: Optional[str] = None
     updated_by: Optional[str] = "LINE User"
-
-class GoogleSheetsSyncRequest(BaseModel):
-    sheet_url: Optional[str] = None
-    action: str = "sync" # "pull" or "push"
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_index():
@@ -49,7 +48,11 @@ async def serve_index():
     if os.path.exists(index_path):
         with open(index_path, "r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read())
-    return HTMLResponse(content="<h1>Solar Project Dashboard Server Running</h1>")
+    return HTMLResponse(content="<h1>KPGreenergy Planner Running</h1>")
+
+@app.get("/index.html", response_class=HTMLResponse)
+async def serve_index_html():
+    return await serve_index()
 
 @app.get("/liff", response_class=HTMLResponse)
 async def serve_liff():
@@ -58,6 +61,10 @@ async def serve_liff():
         with open(liff_path, "r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read())
     return HTMLResponse(content="<h1>LINE LIFF Form</h1>")
+
+@app.get("/liff.html", response_class=HTMLResponse)
+async def serve_liff_html():
+    return await serve_liff()
 
 # API Endpoints
 @app.get("/api/overview")
@@ -70,14 +77,12 @@ async def get_overview():
     delayed_count = sum(1 for p in projects if p.get("status") == "DELAYED")
     on_track_count = sum(1 for p in projects if p.get("status") in ["ON_TRACK", "SLIGHT_DELAY"])
     
-    # Weighted overall progress
     total_act_weighted = sum(p.get("actual_progress_pct", 0.0) * p.get("capacity_kwp", 0.0) for p in projects)
     total_plan_weighted = sum(p.get("planned_progress_pct", 0.0) * p.get("capacity_kwp", 0.0) for p in projects)
     
     avg_actual = round(total_act_weighted / total_capacity, 2) if total_capacity > 0 else 0.0
     avg_planned = round(total_plan_weighted / total_capacity, 2) if total_capacity > 0 else 0.0
     
-    # Unique lists for filters
     business_units = sorted(list(set(p.get("business_unit") for p in projects if p.get("business_unit"))))
     lots = sorted(list(set(p.get("lot") for p in projects if p.get("lot"))))
     installation_types = sorted(list(set(p.get("installation_type") for p in projects if p.get("installation_type"))))
@@ -123,7 +128,6 @@ async def get_projects(
             if not (name_match or bu_match or lot_match):
                 continue
         
-        # Summary item (without huge milestone array for speed)
         results.append({
             "id": p["id"],
             "name": p["name"],
@@ -158,7 +162,6 @@ async def get_phases():
 
 @app.post("/api/update-milestone")
 async def update_milestone(req: MilestoneUpdateRequest):
-    # If pct > 1.0, convert from 100% scale
     pct = req.actual_pct
     if pct > 1.0:
         pct = pct / 100.0
@@ -189,7 +192,6 @@ async def update_milestone(req: MilestoneUpdateRequest):
         }
     }
 
-# Webhook endpoint for LINE Bot and Google Apps Script
 @app.post("/api/webhook")
 async def handle_webhook(request: Request):
     try:
@@ -207,7 +209,6 @@ async def handle_webhook(request: Request):
         if pct > 1.0:
             pct = pct / 100.0
         
-        # If project_name is provided instead of ID, find ID
         if not p_id and p_name:
             for p in engine.projects:
                 if p["name"].strip().lower() == p_name.strip().lower():
@@ -228,12 +229,58 @@ async def handle_webhook(request: Request):
 
 @app.get("/api/google-apps-script-code")
 async def get_gas_code():
-    gas_path = os.path.join(os.path.dirname(__file__), "google_apps_script.js")
+    gas_path = os.path.join(BASE_DIR, "google_apps_script.js")
     if os.path.exists(gas_path):
         with open(gas_path, "r", encoding="utf-8") as f:
             return {"code": f.read()}
     return {"code": "// Google Apps Script template"}
 
+
+@app.post("/api/sync-google-sheet")
+async def sync_google_sheet(request: Request):
+    try:
+        body = await request.json()
+        sheet_url = body.get("sheet_url")
+        if not sheet_url:
+            raise HTTPException(status_code=400, detail="Missing sheet_url")
+        
+        # Fetch data from Google Apps Script Web App
+        import requests
+        resp = requests.get(sheet_url, timeout=20)
+        if resp.status_code != 200:
+            raise HTTPException(status_code=400, detail=f"Google Sheet returned status {resp.status_code}")
+        
+        data = resp.json()
+        projects_from_sheet = data.get("projects", [])
+        
+        if not projects_from_sheet:
+            raise HTTPException(status_code=400, detail="No projects returned from Google Sheet")
+        
+        # Update engine projects
+        for p_sheet in projects_from_sheet:
+            p_name = p_sheet.get("name")
+            # Find matching project in engine
+            for p_eng in engine.projects:
+                if p_eng["name"].strip().lower() == p_name.strip().lower():
+                    # Update milestones
+                    for m_s in p_sheet.get("milestones", []):
+                        m_name = m_s.get("name")
+                        act_pct = float(m_s.get("actual_pct", 0.0))
+                        engine.update_milestone(
+                            project_id=p_eng["id"],
+                            milestone_name=m_name,
+                            actual_pct=act_pct,
+                            actual_start=m_s.get("actual_start"),
+                            actual_finish=m_s.get("actual_finish")
+                        )
+                    break
+                    
+        engine.save_to_cache()
+        return {"success": True, "message": f"Synced {len(projects_from_sheet)} projects from Google Sheet successfully!"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
