@@ -608,13 +608,21 @@
             </div>
           </div>
 
-          <div class="p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-2 text-slate-700">
-            <p class="font-semibold text-slate-900">วิธีติดตั้ง Google Apps Script ใน Google Sheet:</p>
-            <ol class="list-decimal list-inside space-y-1">
-              <li>เปิด Google Sheet ของคุณ > เลือก <strong>Extensions (ส่วนขยาย)</strong> > <strong>Apps Script</strong></li>
-              <li>คัดลอกโค้ดสคริปต์ด้านล่างไปวางแทนที่โค้ดเดิม</li>
-              <li>กด <strong>Deploy (ปรับใช้)</strong> > <strong>New Deployment</strong> > เลือกประเภท <strong>Web App</strong></li>
-            </ol>
+          <div class="p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-3 text-slate-700">
+            <p class="font-semibold text-slate-900">เชื่อมต่อ Google Sheets Web App URL (Live Sync 2-Way):</p>
+            <div>
+              <label class="block text-slate-500 mb-1">วาง URL ของ Google Apps Script Web App ที่ได้จากการ Deploy:</label>
+              <div class="flex gap-2">
+                <input type="text" id="gsheet-url-input" placeholder="https://script.google.com/macros/s/.../exec" class="flex-1 bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                <button onclick="saveAndSyncGoogleSheet()" id="btn-sync-gsheet" class="bg-emerald-700 hover:bg-emerald-800 text-white font-semibold px-4 py-2 rounded-xl text-xs transition flex items-center gap-1.5 whitespace-nowrap shadow-sm">
+                  <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                  <span>ซิงค์ข้อมูลเดี๋ยวนี้</span>
+                </button>
+              </div>
+            </div>
+            <div class="pt-2 border-t border-slate-200 text-[11px] text-slate-500">
+              <span class="font-medium text-slate-700">ขั้นตอนการ Deploy ใน Google Sheet:</span> ไปที่ ส่วนขยาย > Apps Script > กด Deploy > New deployment > เลือกประเภท Web App (Execute as Me, Access Anyone) > คัดลอก URL มาวางในช่องด้านบน
+            </div>
           </div>
 
           <button onclick="copyGasCode()" class="w-full flex items-center justify-center space-x-2 bg-slate-800 hover:bg-slate-700 text-white font-medium py-2.5 rounded-xl text-sm transition">

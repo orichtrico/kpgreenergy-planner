@@ -971,3 +971,49 @@ async function copyGasCode() {
 function round(val, decimals = 2) {
   return Number(Math.round(val + 'e' + decimals) + 'e-' + decimals);
 }
+
+
+// Google Sheets Live Sync
+async function saveAndSyncGoogleSheet() {
+  const urlInput = document.getElementById('gsheet-url-input');
+  const url = urlInput ? urlInput.value.trim() : '';
+  if (!url) {
+    showToast('กรุณาวาง URL ของ Google Apps Script Web App', 'error');
+    return;
+  }
+  
+  localStorage.setItem('kpgreenergy_gsheet_url', url);
+  const btn = document.getElementById('btn-sync-gsheet');
+  const originalText = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = `<span class="animate-spin mr-1">⏳</span> กำลังดึงข้อมูล...`;
+  
+  try {
+    const res = await fetch('/api/sync-google-sheet', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sheet_url: url })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Sync failed');
+    
+    showToast('ซิงค์ข้อมูลจาก Google Sheets สำเร็จเรียบร้อยแล้ว!');
+    await refreshData();
+  } catch (err) {
+    console.error(err);
+    showToast('ไม่สามารถซิงค์ข้อมูลได้: ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = originalText;
+    lucide.createIcons();
+  }
+}
+
+// On page load, populate saved Google Sheet URL if any
+document.addEventListener('DOMContentLoaded', () => {
+  const savedUrl = localStorage.getItem('kpgreenergy_gsheet_url');
+  const inputEl = document.getElementById('gsheet-url-input');
+  if (savedUrl && inputEl) {
+    inputEl.value = savedUrl;
+  }
+});
