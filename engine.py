@@ -6,6 +6,7 @@ from typing import Dict, List, Any, Optional
 
 EXCEL_PATH = r'C:\Users\siray\Downloads\Weekly Progress R2.xlsx'
 CACHE_PATH = os.path.join(os.path.dirname(__file__), 'data_cache.json')
+BACKUP_CACHE_PATH = os.path.join(os.path.dirname(__file__), 'data_cache_backup.json')
 
 def format_date(dt):
     if dt is None or dt == "-" or dt == "":
@@ -38,35 +39,46 @@ class ProjectEngine:
     def __init__(self, excel_path: str = EXCEL_PATH, cache_path: str = CACHE_PATH):
         self.excel_path = excel_path
         self.cache_path = cache_path
+        self.backup_path = os.path.join(os.path.dirname(cache_path), 'data_cache_backup.json')
         self.weight_matrix = {}
         self.milestone_names = []
         self.milestone_categories = {}
         self.projects = []
         self.projects_dict = {}
         
-        # Fast load from cache if exists
-        if os.path.exists(self.cache_path):
-            self.load_from_cache()
-        else:
-            self.load_data_from_excel()
-            self.save_to_cache()
+        # Load from cache first
+        if not self.load_from_cache():
+            if os.path.exists(self.excel_path):
+                self.load_data_from_excel()
+                self.save_to_cache()
+            else:
+                print(f"[Engine Warning] Neither valid cache nor Excel file found.")
 
-    def load_from_cache(self):
-        try:
-            with open(self.cache_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            self.weight_matrix = {int(k): v for k, v in data.get('weight_matrix', {}).items()}
-            self.milestone_names = data.get('milestone_names', [])
-            self.milestone_categories = data.get('milestone_categories', {})
-            self.projects = data.get('projects', [])
-            self.projects_dict = {p['id']: p for p in self.projects}
-            print(f"[Fast Engine] Loaded {len(self.projects)} projects instantly from cache.")
-        except Exception as e:
-            print(f"[Engine] Cache load error: {e}, falling back to Excel parsing...")
-            self.load_data_from_excel()
-            self.save_to_cache()
+    def load_from_cache(self) -> bool:
+        # Try primary cache
+        for path in [self.cache_path, self.backup_path]:
+            if os.path.exists(path):
+                try:
+                    with open(path, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    
+                    projects = data.get('projects', [])
+                    if len(projects) > 0:
+                        self.weight_matrix = {int(k): v for k, v in data.get('weight_matrix', {}).items()}
+                        self.milestone_names = data.get('milestone_names', [])
+                        self.milestone_categories = data.get('milestone_categories', {})
+                        self.projects = projects
+                        self.projects_dict = {p['id']: p for p in self.projects}
+                        print(f"[Fast Engine] Loaded {len(self.projects)} projects successfully from {os.path.basename(path)}.")
+                        return True
+                except Exception as e:
+                    print(f"[Engine] Error reading {path}: {e}")
+        return False
 
     def save_to_cache(self):
+        """
+        Atomic cache saving to prevent any file corruption
+        """
         try:
             data = {
                 'weight_matrix': self.weight_matrix,
@@ -74,9 +86,20 @@ class ProjectEngine:
                 'milestone_categories': self.milestone_categories,
                 'projects': self.projects
             }
-            with open(self.cache_path, 'w', encoding='utf-8') as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-            print(f"[Engine] Saved cache to {self.cache_path}")
+            tmp_path = self.cache_path + '.tmp'
+            with open(tmp_path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False)
+            
+            # Atomic replace
+            os.replace(tmp_path, self.cache_path)
+            
+            # Also keep a backup
+            try:
+                import shutil
+                shutil.copyfile(self.cache_path, self.backup_path)
+            except:
+                pass
+                
         except Exception as e:
             print(f"[Engine] Failed to save cache: {e}")
 
@@ -145,7 +168,6 @@ class ProjectEngine:
         ws_plan = wb['Plan']
         ws_prog = wb['data Progress'] if 'data Progress' in wb.sheetnames else None
         
-        # Read milestones columns from Plan header (Rows 2, 3, 4) up to "Punch list"
         plan_milestones_cols = []
         c = 8
         while c <= ws_plan.max_column:
@@ -161,7 +183,6 @@ class ProjectEngine:
                     "finish_col": c + 1,
                     "weight_col": c + 2
                 })
-                # If we reached Punch list, stop adding further milestone columns
                 if m_title.lower() == "punch list":
                     break
                 c += 3
@@ -227,7 +248,6 @@ class ProjectEngine:
                 type_code = 1
 
             project_id = f"prj_{r-5:03d}"
-            
             milestones = []
             total_planned_weight = 0.0
             total_actual_progress = 0.0
@@ -255,7 +275,6 @@ class ProjectEngine:
                 
                 p_start_str = format_date(p_start)
                 p_finish_str = format_date(p_finish)
-                
                 p_s_date = parse_date(p_start_str)
                 p_f_date = parse_date(p_finish_str)
                 
@@ -288,7 +307,6 @@ class ProjectEngine:
 
                 milestone_actual_contrib = act_pct * p_weight
                 total_actual_progress += milestone_actual_contrib
-
                 category = self.milestone_categories.get(m_name, "งานทั่วไป")
 
                 milestones.append({
@@ -323,8 +341,8 @@ class ProjectEngine:
 
             actual_pct_total = min(100.0, total_actual_progress * 100)
             planned_pct_today = min(100.0, total_planned_progress_today * 100)
-            
             diff = actual_pct_total - planned_pct_today
+            
             if actual_pct_total >= 99.9:
                 status = "COMPLETED"
                 status_th = "เสร็จสมบูรณ์"
@@ -380,7 +398,6 @@ class ProjectEngine:
 
         min_d = min(all_dates)
         max_d = max(all_dates)
-        
         start_monday = min_d - timedelta(days=min_d.weekday())
         end_monday = max_d + timedelta(days=(7 - max_d.weekday()) % 7)
         if (end_monday - start_monday).days < 28:
@@ -439,10 +456,8 @@ class ProjectEngine:
 
         planned_cum = []
         actual_cum = []
-        
         cum_p = 0.0
         cum_a = 0.0
-        
         today = date.today()
         
         for i, w_monday in enumerate(weeks):
@@ -529,7 +544,7 @@ class ProjectEngine:
         prj = self.projects_dict[project_id]
         updated = False
         for m in prj.get("milestones", []):
-            if m["name"].strip() == milestone_name.strip():
+            if m["name"].strip().lower() == milestone_name.strip().lower():
                 m["actual_pct"] = max(0.0, min(1.0, actual_pct))
                 if actual_start:
                     m["actual_start"] = actual_start
@@ -562,11 +577,7 @@ class ProjectEngine:
             
         return updated
 
-
     def batch_sync_from_sheet_data(self, sheet_rows: list, m_names: list) -> int:
-        """
-        Ultra-fast batch synchronization from Google Sheet data (0.02s execution)
-        """
         updated_projects = 0
         for row in sheet_rows:
             if len(row) < 3:
@@ -600,9 +611,8 @@ class ProjectEngine:
                 except:
                     val = 0.0
                     
-                # Update milestone in memory
                 for m in target_prj.get("milestones", []):
-                    if m["name"].strip() == m_name.strip():
+                    if m["name"].strip().lower() == m_name.strip().lower():
                         m["actual_pct"] = max(0.0, min(1.0, val))
                         if a_start:
                             m["actual_start"] = a_start
@@ -614,7 +624,6 @@ class ProjectEngine:
                         
                 m_idx += 1
                 
-            # Recalculate project
             total_act = sum(m["actual_contribution"] for m in target_prj["milestones"])
             target_prj["actual_progress_pct"] = round(min(100.0, total_act * 100), 2)
             target_prj["variance_pct"] = round(target_prj["actual_progress_pct"] - target_prj["planned_progress_pct"], 2)
