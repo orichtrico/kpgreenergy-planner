@@ -264,9 +264,9 @@ async def sync_google_sheet(request: Request):
         body = await request.json()
         raw_url = body.get("sheet_url", "").strip()
         if not raw_url:
-            raise HTTPException(status_code=400, detail="กรุณาระบุลิงก์ Google Sheet หรือ Web App URL")
+            raise HTTPException(status_code=400, detail="กรุณาระบุลิงก์ Google Sheet")
         
-        # 1. Handle Google Sheets Document Link (https://docs.google.com/spreadsheets/d/...)
+        # 1. Google Sheets Document Link (https://docs.google.com/spreadsheets/d/...)
         sheet_match = re.search(r'/spreadsheets/d/([a-zA-Z0-9-_]+)', raw_url)
         if sheet_match:
             sheet_id = sheet_match.group(1)
@@ -274,70 +274,33 @@ async def sync_google_sheet(request: Request):
             headers = {"User-Agent": "Mozilla/5.0"}
             
             try:
-                r_prog = requests.get(prog_csv_url, headers=headers, timeout=15)
+                r_prog = requests.get(prog_csv_url, headers=headers, timeout=12)
             except Exception as e:
-                raise HTTPException(status_code=502, detail=f"ไม่สามารถเชื่อมต่อ Google Sheets ได้: {str(e)}")
+                raise HTTPException(status_code=502, detail=f"ไม่สามารถเชื่อมต่อ Google Sheets: {str(e)}")
                 
             if r_prog.status_code != 200 or ("html" in r_prog.headers.get("Content-Type", "") and "<html" in r_prog.text.lower()):
                 raise HTTPException(
                     status_code=403, 
-                    detail="Google Sheet ยังไม่ได้เปิดสิทธิ์แชร์! กรุณาเปิด Google Sheet แล้วกดปุ่ม 'แชร์ (Share)' ด้านบนขวา > เลือก 'ทุกคนที่มีลิงก์ (Anyone with link)' ให้เป็น 'ผู้มีสิทธิ์อ่าน (Viewer)' แล้วกดซิงค์ใหม่อีกครั้งครับ"
+                    detail="Google Sheet ยังไม่ได้เปิดสิทธิ์แชร์! กรุณาเปิด Google Sheet กดปุ่ม 'แชร์ (Share)' ด้านบนขวา > เลือก 'ทุกคนที่มีลิงก์ (Anyone with link)' ให้เป็น 'ผู้มีสิทธิ์อ่าน (Viewer)' แล้วกดซิงค์ใหม่อีกครั้งครับ"
                 )
                 
             csv_text = r_prog.text
             reader = list(csv.reader(io.StringIO(csv_text)))
-            if len(reader) < 5:
+            if len(reader) < 2:
                 raise HTTPException(status_code=400, detail="ไม่พบข้อมูลโครงการในชีต 'data Progress'")
                 
-            header_row3 = reader[2]
-            milestones_map = []
-            for c in range(7, len(header_row3), 3):
-                m_name = header_row3[c].strip() if c < len(header_row3) else ""
-                if m_name:
-                    milestones_map.append((c, m_name))
-                    
-            updated_count = 0
-            for r in range(4, len(reader)):
-                row = reader[r]
-                if len(row) < 3:
-                    continue
-                p_name = row[2].strip().lower()
-                if not p_name:
-                    continue
-                    
-                for p_eng in engine.projects:
-                    if p_eng["name"].strip().lower() == p_name:
-                        for c_idx, m_name in milestones_map:
-                            a_start = row[c_idx].strip() if c_idx < len(row) else ""
-                            a_finish = row[c_idx+1].strip() if c_idx+1 < len(row) else ""
-                            pct_str = row[c_idx+2].strip().replace('%', '') if c_idx+2 < len(row) else "0"
-                            try:
-                                act_pct = float(pct_str)
-                                if act_pct > 1.0:
-                                    act_pct = act_pct / 100.0
-                            except:
-                                act_pct = 0.0
-                                
-                            engine.update_milestone(
-                                project_id=p_eng["id"],
-                                milestone_name=m_name,
-                                actual_pct=act_pct,
-                                actual_start=a_start if a_start else None,
-                                actual_finish=a_finish if a_finish else None
-                            )
-                        updated_count += 1
-                        break
-                        
-            engine.save_to_cache()
+            m_names = [m['name'] for m in engine.projects[0]['milestones']] if engine.projects else []
+            updated_count = engine.batch_sync_from_sheet_data(reader[1:], m_names)
+            
             return {
                 "success": True, 
                 "message": f"ซิงค์ข้อมูลจาก Google Sheets สำเร็จเรียบร้อยแล้ว ({updated_count} โครงการ)"
             }
 
-        # 2. Handle Google Apps Script Web App URL
+        # 2. Google Apps Script Web App URL
         headers = {"User-Agent": "Mozilla/5.0"}
         try:
-            resp = requests.get(raw_url, headers=headers, timeout=15, allow_redirects=True)
+            resp = requests.get(raw_url, headers=headers, timeout=12, allow_redirects=True)
         except Exception as net_err:
             raise HTTPException(status_code=502, detail=f"ไม่สามารถเชื่อมต่อ Web App URL: {str(net_err)}")
             
@@ -362,13 +325,36 @@ async def sync_google_sheet(request: Request):
                     for m_s in p_sheet.get("milestones", []):
                         m_name = m_s.get("name")
                         act_pct = float(m_s.get("actual_pct", 0.0))
-                        engine.update_milestone(
-                            project_id=p_eng["id"],
-                            milestone_name=m_name,
-                            actual_pct=act_pct,
-                            actual_start=m_s.get("actual_start"),
-                            actual_finish=m_s.get("actual_finish")
-                        )
+                        # Update without saving each loop
+                        for m in p_eng.get("milestones", []):
+                            if m["name"].strip() == m_name.strip():
+                                m["actual_pct"] = max(0.0, min(1.0, act_pct))
+                                if m_s.get("actual_start"):
+                                    m["actual_start"] = m_s.get("actual_start")
+                                if m_s.get("actual_finish"):
+                                    m["actual_finish"] = m_s.get("actual_finish")
+                                m["status"] = "COMPLETED" if m["actual_pct"] >= 1.0 else ("IN_PROGRESS" if m["actual_pct"] > 0 else "PENDING")
+                                m["actual_contribution"] = round(m["actual_pct"] * m["weight"], 4)
+                                break
+                    
+                    # Recalculate
+                    total_act = sum(m["actual_contribution"] for m in p_eng["milestones"])
+                    p_eng["actual_progress_pct"] = round(min(100.0, total_act * 100), 2)
+                    p_eng["variance_pct"] = round(p_eng["actual_progress_pct"] - p_eng["planned_progress_pct"], 2)
+                    if p_eng["actual_progress_pct"] >= 99.9:
+                        p_eng["status"] = "COMPLETED"
+                        p_eng["status_th"] = "เสร็จสมบูรณ์"
+                    elif p_eng["variance_pct"] >= 0:
+                        p_eng["status"] = "ON_TRACK"
+                        p_eng["status_th"] = "ตามแผนงาน"
+                    elif p_eng["variance_pct"] >= -10:
+                        p_eng["status"] = "SLIGHT_DELAY"
+                        p_eng["status_th"] = "ล่าช้าเล็กน้อย"
+                    else:
+                        p_eng["status"] = "DELAYED"
+                        p_eng["status_th"] = "ล่าช้ากว่าแผน"
+                        
+                    p_eng["s_curve"] = engine.generate_project_scurve(p_eng)
                     updated_count += 1
                     break
                     
