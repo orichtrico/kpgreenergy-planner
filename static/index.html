@@ -609,17 +609,28 @@
           </div>
 
           <div class="p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-3 text-slate-700">
-            <p class="font-semibold text-slate-900">เชื่อมต่อ Google Sheets Web App URL (Live Sync 2-Way):</p>
-            <div>
-              <label class="block text-slate-500 mb-1">วาง URL ของ Google Apps Script Web App ที่ได้จากการ Deploy:</label>
+            <div class="flex items-center justify-between">
+              <p class="font-semibold text-slate-900 flex items-center gap-1.5">
+                <i data-lucide="link" class="w-4 h-4 text-emerald-600"></i>
+                <span>เชื่อมต่อ Google Sheets (รองรับทั้งลิงก์ชีตและ Web App):</span>
+              </p>
+              <span class="text-[10px] bg-emerald-100 text-emerald-800 font-semibold px-2 py-0.5 rounded-full">Real-time Fast Sync</span>
+            </div>
+            
+            <div class="space-y-1.5">
+              <label class="block text-slate-600 font-medium">วางลิงก์ Google Sheet ของคุณ หรือ URL Web App:</label>
               <div class="flex gap-2">
-                <input type="text" id="gsheet-url-input" placeholder="https://script.google.com/macros/s/.../exec" class="flex-1 bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                <input type="text" id="gsheet-url-input" placeholder="https://docs.google.com/spreadsheets/d/.../edit หรือ Web App URL" class="flex-1 bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none font-mono">
                 <button onclick="saveAndSyncGoogleSheet()" id="btn-sync-gsheet" class="bg-emerald-700 hover:bg-emerald-800 text-white font-semibold px-4 py-2 rounded-xl text-xs transition flex items-center gap-1.5 whitespace-nowrap shadow-sm">
-                  <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                  <i data-lucide="refresh-cw" class="w-3.5 h-3.5" id="btn-sync-spinner"></i>
                   <span>ซิงค์ข้อมูลเดี๋ยวนี้</span>
                 </button>
               </div>
+              <p class="text-[11px] text-slate-500 mt-1">
+                💡 <strong>วิธีที่ง่ายและเร็วที่สุด:</strong> เพียงกด <strong>แชร์ (Share)</strong> ใน Google Sheet > เลือก <strong>"ทุกคนที่มีลิงก์ (Anyone with link) เป็น ผู้มีสิทธิ์อ่าน (Viewer)"</strong> แล้วนำลิงก์เบราว์เซอร์ของชีตมาวางได้เลยครับ ไม่ต้องผ่านขั้นตอน Deploy ก็ซิงค์ได้ทันที!
+              </p>
             </div>
+          </div>
             <div class="pt-2 border-t border-slate-200 text-[11px] text-slate-500">
               <span class="font-medium text-slate-700">ขั้นตอนการ Deploy ใน Google Sheet:</span> ไปที่ ส่วนขยาย > Apps Script > กด Deploy > New deployment > เลือกประเภท Web App (Execute as Me, Access Anyone) > คัดลอก URL มาวางในช่องด้านบน
             </div>

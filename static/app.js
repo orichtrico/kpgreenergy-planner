@@ -974,11 +974,12 @@ function round(val, decimals = 2) {
 
 
 // Google Sheets Live Sync
+// Google Sheets Live Sync with Timeout Protection
 async function saveAndSyncGoogleSheet() {
   const urlInput = document.getElementById('gsheet-url-input');
   const url = urlInput ? urlInput.value.trim() : '';
   if (!url) {
-    showToast('กรุณาวาง URL ของ Google Apps Script Web App', 'error');
+    showToast('กรุณาวางลิงก์ Google Sheet หรือ Web App URL', 'error');
     return;
   }
   
@@ -986,22 +987,36 @@ async function saveAndSyncGoogleSheet() {
   const btn = document.getElementById('btn-sync-gsheet');
   const originalText = btn.innerHTML;
   btn.disabled = true;
-  btn.innerHTML = `<span class="animate-spin mr-1">⏳</span> กำลังดึงข้อมูล...`;
+  btn.innerHTML = `<span class="animate-spin mr-1">⏳</span> กำลังซิงค์ข้อมูล...`;
+  
+  // Abort controller for 15s max timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
   
   try {
     const res = await fetch('/api/sync-google-sheet', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sheet_url: url })
+      body: JSON.stringify({ sheet_url: url }),
+      signal: controller.signal
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Sync failed');
+    clearTimeout(timeoutId);
     
-    showToast('ซิงค์ข้อมูลจาก Google Sheets สำเร็จเรียบร้อยแล้ว!');
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.detail || 'การซิงค์ไม่สำเร็จ');
+    }
+    
+    showToast(data.message || 'ซิงค์ข้อมูลจาก Google Sheets สำเร็จเรียบร้อย!');
     await refreshData();
   } catch (err) {
-    console.error(err);
-    showToast('ไม่สามารถซิงค์ข้อมูลได้: ' + err.message, 'error');
+    clearTimeout(timeoutId);
+    console.error("Sync error:", err);
+    if (err.name === 'AbortError') {
+      showToast('การเชื่อมต่อใช้เวลานานเกินไป กรุณาใช้ลิงก์แชร์ Google Sheet โดยตรงแทนครับ', 'error');
+    } else {
+      showToast(err.message || 'เกิดข้อผิดพลาดในการซิงค์ข้อมูล', 'error');
+    }
   } finally {
     btn.disabled = false;
     btn.innerHTML = originalText;

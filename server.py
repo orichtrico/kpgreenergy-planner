@@ -1,5 +1,9 @@
 import os
 import json
+import re
+import csv
+import io
+import requests
 from datetime import datetime, date
 from typing import Optional, List
 from fastapi import FastAPI, HTTPException, Request
@@ -227,42 +231,107 @@ async def handle_webhook(request: Request):
             
     return {"status": "received", "body": body}
 
-@app.get("/api/google-apps-script-code")
-async def get_gas_code():
-    gas_path = os.path.join(BASE_DIR, "google_apps_script.js")
-    if os.path.exists(gas_path):
-        with open(gas_path, "r", encoding="utf-8") as f:
-            return {"code": f.read()}
-    return {"code": "// Google Apps Script template"}
-
-
 @app.post("/api/sync-google-sheet")
 async def sync_google_sheet(request: Request):
     try:
         body = await request.json()
-        sheet_url = body.get("sheet_url")
-        if not sheet_url:
-            raise HTTPException(status_code=400, detail="Missing sheet_url")
+        raw_url = body.get("sheet_url", "").strip()
+        if not raw_url:
+            raise HTTPException(status_code=400, detail="กรุณาระบุลิงก์ Google Sheet หรือ Web App URL")
         
-        # Fetch data from Google Apps Script Web App
-        import requests
-        resp = requests.get(sheet_url, timeout=20)
-        if resp.status_code != 200:
-            raise HTTPException(status_code=400, detail=f"Google Sheet returned status {resp.status_code}")
-        
-        data = resp.json()
+        # 1. Check if it is a standard Google Sheet Link (https://docs.google.com/spreadsheets/d/...):
+        sheet_match = re.search(r'/spreadsheets/d/([a-zA-Z0-9-_]+)', raw_url)
+        if sheet_match:
+            sheet_id = sheet_match.group(1)
+            prog_csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet=data%20Progress"
+            headers = {"User-Agent": "Mozilla/5.0"}
+            
+            try:
+                r_prog = requests.get(prog_csv_url, headers=headers, timeout=12)
+            except Exception as e:
+                raise HTTPException(status_code=502, detail=f"ไม่สามารถเชื่อมต่อ Google Sheets: {str(e)}")
+                
+            if r_prog.status_code != 200 or ("html" in r_prog.headers.get("Content-Type", "") and "<html" in r_prog.text.lower()):
+                raise HTTPException(
+                    status_code=403, 
+                    detail="Google Sheet ยังไม่ได้เปิดสิทธิ์แชร์! กรุณาเปิด Google Sheet กดปุ่ม 'แชร์ (Share)' ด้านขวาบน > เลือก 'ทุกคนที่มีลิงก์ (Anyone with the link)' ให้เป็น 'ผู้มีสิทธิ์อ่าน (Viewer)' แล้วกดซิงค์ใหม่อีกครั้งครับ"
+                )
+                
+            csv_text = r_prog.text
+            reader = list(csv.reader(io.StringIO(csv_text)))
+            if len(reader) < 5:
+                raise HTTPException(status_code=400, detail="ไม่พบข้อมูลโครงการในชีต 'data Progress'")
+                
+            header_row3 = reader[2]
+            milestones_map = []
+            for c in range(7, len(header_row3), 3):
+                m_name = header_row3[c].strip() if c < len(header_row3) else ""
+                if m_name:
+                    milestones_map.append((c, m_name))
+                    
+            updated_count = 0
+            for r in range(4, len(reader)):
+                row = reader[r]
+                if len(row) < 3:
+                    continue
+                p_name = row[2].strip().lower()
+                if not p_name:
+                    continue
+                    
+                for p_eng in engine.projects:
+                    if p_eng["name"].strip().lower() == p_name:
+                        for c_idx, m_name in milestones_map:
+                            a_start = row[c_idx].strip() if c_idx < len(row) else ""
+                            a_finish = row[c_idx+1].strip() if c_idx+1 < len(row) else ""
+                            pct_str = row[c_idx+2].strip().replace('%', '') if c_idx+2 < len(row) else "0"
+                            try:
+                                act_pct = float(pct_str)
+                                if act_pct > 1.0:
+                                    act_pct = act_pct / 100.0
+                            except:
+                                act_pct = 0.0
+                                
+                            engine.update_milestone(
+                                project_id=p_eng["id"],
+                                milestone_name=m_name,
+                                actual_pct=act_pct,
+                                actual_start=a_start if a_start else None,
+                                actual_finish=a_finish if a_finish else None
+                            )
+                        updated_count += 1
+                        break
+                        
+            engine.save_to_cache()
+            return {
+                "success": True, 
+                "message": f"ซิงค์ข้อมูลจาก Google Sheets สำเร็จเรียบร้อย ({updated_count} โครงการ)"
+            }
+
+        # 2. Otherwise handle as Google Apps Script Web App URL
+        headers = {"User-Agent": "Mozilla/5.0"}
+        try:
+            resp = requests.get(raw_url, headers=headers, timeout=12, allow_redirects=True)
+        except Exception as net_err:
+            raise HTTPException(status_code=502, detail=f"ไม่สามารถเชื่อมต่อ Web App URL: {str(net_err)}")
+            
+        content_type = resp.headers.get("Content-Type", "")
+        if "accounts.google.com" in resp.url or ("text/html" in content_type and "<!DOCTYPE html>" in resp.text):
+            raise HTTPException(
+                status_code=403,
+                detail="Google Sheet ติดสิทธิ์การเข้าถึง! คุณสามารถใส่ 'ลิงก์ของ Google Sheet' ปกติ (https://docs.google.com/spreadsheets/d/...) แทนได้เลย สะดวกและรวดเร็วกว่าครับ"
+            )
+            
+        try:
+            data = resp.json()
+        except:
+            raise HTTPException(status_code=422, detail="ข้อมูลที่ตอบกลับไม่ใช่ JSON ลองวางลิงก์ Google Sheet แทน")
+            
         projects_from_sheet = data.get("projects", [])
-        
-        if not projects_from_sheet:
-            raise HTTPException(status_code=400, detail="No projects returned from Google Sheet")
-        
-        # Update engine projects
+        updated_count = 0
         for p_sheet in projects_from_sheet:
-            p_name = p_sheet.get("name")
-            # Find matching project in engine
+            p_name = p_sheet.get("name", "").strip().lower()
             for p_eng in engine.projects:
-                if p_eng["name"].strip().lower() == p_name.strip().lower():
-                    # Update milestones
+                if p_eng["name"].strip().lower() == p_name:
                     for m_s in p_sheet.get("milestones", []):
                         m_name = m_s.get("name")
                         act_pct = float(m_s.get("actual_pct", 0.0))
@@ -273,12 +342,27 @@ async def sync_google_sheet(request: Request):
                             actual_start=m_s.get("actual_start"),
                             actual_finish=m_s.get("actual_finish")
                         )
+                    updated_count += 1
                     break
                     
         engine.save_to_cache()
-        return {"success": True, "message": f"Synced {len(projects_from_sheet)} projects from Google Sheet successfully!"}
+        return {
+            "success": True, 
+            "message": f"ซิงค์ข้อมูลจาก Google Sheets สำเร็จเรียบร้อย ({updated_count} โครงการ)"
+        }
+        
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/google-apps-script-code")
+async def get_gas_code():
+    gas_path = os.path.join(BASE_DIR, "google_apps_script.js")
+    if os.path.exists(gas_path):
+        with open(gas_path, "r", encoding="utf-8") as f:
+            return {"code": f.read()}
+    return {"code": "// Google Apps Script template"}
 
 if __name__ == "__main__":
     import uvicorn
