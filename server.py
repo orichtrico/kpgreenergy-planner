@@ -195,10 +195,12 @@ async def update_milestone(req: MilestoneUpdateRequest):
     
     updated_project = engine.projects_dict[req.project_id]
     
-    # 2. Write-back to Google Sheet (if Apps Script Web App URL or Google Sheet is configured)
+    # 2. Write-back to Google Sheet via Google Apps Script Web App
     gsheet_synced = False
     gsheet_msg = ""
-    if req.sheet_url and "script.google.com" in req.sheet_url:
+    target_write_url = req.sheet_url or ""
+    
+    if "script.google.com" in target_write_url:
         try:
             payload = {
                 "action": "update_milestone",
@@ -211,12 +213,25 @@ async def update_milestone(req: MilestoneUpdateRequest):
                 "updated_by": req.updated_by or "Web Editor",
                 "note": req.note or "อัปเดตผ่านเว็บ Dashboard (KPGEditor)"
             }
-            gs_resp = requests.post(req.sheet_url, json=payload, timeout=8)
+            gs_resp = requests.post(target_write_url, json=payload, timeout=12, allow_redirects=True)
             if gs_resp.status_code == 200:
-                gsheet_synced = True
-                gsheet_msg = " และบันทึกลง Google Sheets เรียบร้อยแล้ว"
+                try:
+                    res_json = gs_resp.json()
+                    if res_json.get("status") == "success":
+                        gsheet_synced = True
+                        gsheet_msg = " และบันทึกลง Google Sheet เรียบร้อยแล้ว ✅"
+                    else:
+                        gsheet_msg = f" (Google Sheet แจ้ง: {res_json.get('message')})"
+                except:
+                    gsheet_synced = True
+                    gsheet_msg = " และส่งข้อมูลไปยัง Google Sheet เรียบร้อยแล้ว"
+            else:
+                gsheet_msg = f" (Google Sheet ตอบกลับสถานะ {gs_resp.status_code})"
         except Exception as e:
             print(f"Warning: Failed to write to Google Sheet Web App: {e}")
+            gsheet_msg = f" (ไม่สามารถเขียนลงชีตได้: {str(e)})"
+    else:
+        gsheet_msg = " (อัปเดตบนหน้าเว็บเรียบร้อย - ใส่ Apps Script Web App URL เพื่อให้เขียนลงชีตอัตโนมัติ)"
 
     return {
         "success": True,

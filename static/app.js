@@ -877,7 +877,7 @@ async function handleModalSubmit(e) {
   const finishD = document.getElementById('modal-finish-date').value;
   const pwdInput = document.getElementById('modal-editor-password');
   const pwd = pwdInput ? pwdInput.value.trim() : '';
-  const savedSheetUrl = localStorage.getItem('kpgreenergy_gsheet_url') || '';
+  const savedSheetUrl = localStorage.getItem('kpgreenergy_webapp_url') || localStorage.getItem('kpgreenergy_gsheet_url') || '';
   
   if (!pwd) {
     showToast('กรุณาใส่รหัสผ่าน KPGEditor เพื่อบันทึกข้อมูล', 'error');
@@ -1059,8 +1059,26 @@ async function saveAndSyncGoogleSheet() {
 // On page load, populate saved Google Sheet URL if any
 document.addEventListener('DOMContentLoaded', () => {
   const savedUrl = localStorage.getItem('kpgreenergy_gsheet_url');
+  const savedWebAppUrl = localStorage.getItem('kpgreenergy_webapp_url');
+  const webappInput = document.getElementById('webapp-url-input');
+  if (savedWebAppUrl && webappInput) {
+    webappInput.value = savedWebAppUrl;
+  }
   const inputEl = document.getElementById('gsheet-url-input');
   if (savedUrl && inputEl) {
     inputEl.value = savedUrl;
   }
 });
+
+
+// Save Web App URL for 2-Way Writing
+function saveWebAppUrl() {
+  const inputEl = document.getElementById('webapp-url-input');
+  const url = inputEl ? inputEl.value.trim() : '';
+  if (!url) {
+    showToast('กรุณาวาง URL ของ Web App จาก Apps Script', 'error');
+    return;
+  }
+  localStorage.setItem('kpgreenergy_webapp_url', url);
+  showToast('บันทึกลิงก์เขียนข้อมูล 2-Way เรียบร้อยแล้ว!');
+}

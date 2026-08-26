@@ -608,26 +608,48 @@
             </div>
           </div>
 
-          <div class="p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-3 text-slate-700">
-            <div class="flex items-center justify-between">
-              <p class="font-semibold text-slate-900 flex items-center gap-1.5">
-                <i data-lucide="link" class="w-4 h-4 text-emerald-600"></i>
-                <span>เชื่อมต่อ Google Sheets (รองรับทั้งลิงก์ชีตและ Web App):</span>
-              </p>
-              <span class="text-[10px] bg-emerald-100 text-emerald-800 font-semibold px-2 py-0.5 rounded-full">Real-time Fast Sync</span>
+          <div class="p-5 bg-slate-50 rounded-2xl border border-slate-200 text-xs space-y-4 text-slate-700">
+            <div class="flex items-center justify-between border-b border-slate-200 pb-3">
+              <div>
+                <h4 class="font-bold text-slate-900 text-sm flex items-center gap-1.5">
+                  <i data-lucide="refresh-cw" class="w-4 h-4 text-emerald-600"></i>
+                  <span>การเชื่อมต่อ Google Sheets 2-Way (อ่าน & เขียนอัตโนมัติ):</span>
+                </h4>
+                <p class="text-[11px] text-slate-500 mt-0.5">เชื่อมต่อให้ระบบอ่านและเขียนข้อมูลกลับเข้าชีตได้ทันที</p>
+              </div>
+              <span class="text-[10px] bg-emerald-100 text-emerald-800 font-semibold px-2.5 py-1 rounded-full">2-Way Sync Active</span>
             </div>
-            
+
+            <!-- Input 1: Google Sheet Read URL -->
             <div class="space-y-1.5">
-              <label class="block text-slate-600 font-medium">วางลิงก์ Google Sheet ของคุณ หรือ URL Web App:</label>
+              <label class="block font-semibold text-slate-800 flex items-center gap-1">
+                <i data-lucide="eye" class="w-3.5 h-3.5 text-blue-600"></i>
+                <span>1. ลิงก์ Google Sheet (สำหรับอ่านข้อมูลสด & กราฟ S-Curve):</span>
+              </label>
               <div class="flex gap-2">
-                <input type="text" id="gsheet-url-input" placeholder="https://docs.google.com/spreadsheets/d/.../edit หรือ Web App URL" class="flex-1 bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none font-mono">
+                <input type="text" id="gsheet-url-input" placeholder="https://docs.google.com/spreadsheets/d/.../edit" class="flex-1 bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none font-mono">
                 <button onclick="saveAndSyncGoogleSheet()" id="btn-sync-gsheet" class="bg-emerald-700 hover:bg-emerald-800 text-white font-semibold px-4 py-2 rounded-xl text-xs transition flex items-center gap-1.5 whitespace-nowrap shadow-sm">
-                  <i data-lucide="refresh-cw" class="w-3.5 h-3.5" id="btn-sync-spinner"></i>
-                  <span>ซิงค์ข้อมูลเดี๋ยวนี้</span>
+                  <i data-lucide="download-cloud" class="w-3.5 h-3.5"></i>
+                  <span>ดึงข้อมูลเดี๋ยวนี้</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Input 2: Google Apps Script Web App URL for Writing -->
+            <div class="space-y-1.5 pt-2 border-t border-slate-200/60">
+              <label class="block font-semibold text-slate-800 flex items-center gap-1">
+                <i data-lucide="edit-3" class="w-3.5 h-3.5 text-amber-600"></i>
+                <span>2. Google Apps Script Web App URL (สำหรับเขียนข้อมูลกลับเข้าชีตอัตโนมัติ):</span>
+              </label>
+              <div class="flex gap-2">
+                <input type="text" id="webapp-url-input" placeholder="https://script.google.com/macros/s/.../exec" class="flex-1 bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none font-mono">
+                <button onclick="saveWebAppUrl()" id="btn-save-webapp" class="bg-slate-800 hover:bg-slate-700 text-white font-semibold px-4 py-2 rounded-xl text-xs transition flex items-center gap-1.5 whitespace-nowrap shadow-sm">
+                  <i data-lucide="save" class="w-3.5 h-3.5"></i>
+                  <span>บันทึกลิงก์เขียน</span>
                 </button>
               </div>
               <p class="text-[11px] text-slate-500 mt-1">
-                💡 <strong>วิธีที่ง่ายและเร็วที่สุด:</strong> เพียงกด <strong>แชร์ (Share)</strong> ใน Google Sheet > เลือก <strong>"ทุกคนที่มีลิงก์ (Anyone with link) เป็น ผู้มีสิทธิ์อ่าน (Viewer)"</strong> แล้วนำลิงก์เบราว์เซอร์ของชีตมาวางได้เลยครับ ไม่ต้องผ่านขั้นตอน Deploy ก็ซิงค์ได้ทันที!
+                💡 <strong>วิธีเอาลิงก์เขียน:</strong> ใน Google Sheet ไปที่ <strong>ส่วนขยาย > Apps Script > Deploy > Manage deployments</strong> > คัดลอก <strong>Web app URL</strong> มาวางที่ช่องนี้ เมื่อกดแก้ไขบนหน้าเว็บ ข้อมูลจะวิ่งไปเขียนลงเซลล์ใน Google Sheet ทันทีครับ!
               </p>
             </div>
           </div>
