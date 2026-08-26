@@ -9,6 +9,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('liff-start-date').value = todayStr;
   document.getElementById('liff-finish-date').value = todayStr;
   
+  const savedPwd = localStorage.getItem('liff_auth_pwd');
+  const pwdEl = document.getElementById('liff-password');
+  if (savedPwd && pwdEl) {
+    pwdEl.value = savedPwd;
+  }
+  
   // Try initializing LINE LIFF SDK if LIFF ID is configured
   if (typeof liff !== 'undefined') {
     try {
@@ -148,7 +154,7 @@ async function submitLiffForm() {
   
   const mName = document.getElementById('liff-milestone-select').value;
   if (!mName) {
-    alert("กรุณาเลือก Milestone");
+    alert("กรุณาเลือกรายการงาน (Milestone)");
     return;
   }
   
@@ -156,10 +162,19 @@ async function submitLiffForm() {
   const startDate = document.getElementById('liff-start-date').value;
   const finishDate = document.getElementById('liff-finish-date').value;
   const note = document.getElementById('liff-note').value;
+  const pwdInput = document.getElementById('liff-password');
+  const pwd = pwdInput ? pwdInput.value.trim() : 'KPGEditor';
+  const savedSheetUrl = localStorage.getItem('kpgreenergy_webapp_url') || localStorage.getItem('kpgreenergy_gsheet_url') || '';
+  
+  if (!pwd) {
+    alert("กรุณาใส่รหัสผ่าน KPGEditor เพื่อยืนยันการบันทึก");
+    return;
+  }
   
   const btn = document.getElementById('liff-submit-btn');
+  const originalHtml = btn.innerHTML;
   btn.disabled = true;
-  btn.innerHTML = `<span class="animate-spin mr-2">⏳</span> กำลังบันทึก...`;
+  btn.innerHTML = `<span class="animate-spin mr-2">⏳</span> กำลังบันทึกข้อมูล...`;
   
   try {
     const res = await fetch('/api/update-milestone', {
@@ -171,12 +186,20 @@ async function submitLiffForm() {
         actual_pct: pct,
         actual_start: startDate,
         actual_finish: finishDate,
-        note: note,
-        updated_by: 'LINE LIFF User'
+        note: note || 'อัปเดตผ่าน LINE LIFF',
+        updated_by: 'LINE LIFF User',
+        password: pwd,
+        sheet_url: savedSheetUrl
       })
     });
     
-    if (!res.ok) throw new Error("Update failed");
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.detail || 'บันทึกไม่สำเร็จ');
+    }
+    
+    // Remember password in localStorage
+    localStorage.setItem('liff_auth_pwd', pwd);
     
     document.getElementById('liff-success-desc').innerText = `อัปเดต ${liffCurrentProject.name} -> ${mName} (${pct}%) เรียบร้อยแล้ว`;
     document.getElementById('liff-success-modal').classList.remove('hidden');
@@ -186,7 +209,7 @@ async function submitLiffForm() {
     alert("เกิดข้อผิดพลาดในการบันทึก: " + err.message);
   } finally {
     btn.disabled = false;
-    btn.innerHTML = `<i data-lucide="check" class="w-5 h-5"></i> <span>บันทึกความคืบหน้าเข้าระบบ</span>`;
+    btn.innerHTML = originalHtml;
     lucide.createIcons();
   }
 }
