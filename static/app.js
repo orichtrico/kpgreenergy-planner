@@ -1006,6 +1006,84 @@ async function generateProjectPDF() {
 }
 
 
+// =========================================================================
+// MODAL & QUICK UPDATE CONTROLLERS
+// =========================================================================
+function openQuickUpdateModal(milestoneName = null, pctVal = 100, actStart = '', actFinish = '') {
+  if (!currentProject) {
+    showToast('กรุณาเลือกโครงการก่อนอัปเดตงาน', 'error');
+    return;
+  }
+  
+  const modal = document.getElementById('update-modal');
+  if (!modal) return;
+  
+  document.getElementById('modal-subtitle').innerText = `โครงการ: ${currentProject.name} (${currentProject.lot})`;
+  
+  // Populate Milestones Dropdown
+  const mSel = document.getElementById('modal-milestone-select');
+  mSel.innerHTML = '';
+  (currentProject.milestones || []).forEach(m => {
+    const opt = document.createElement('option');
+    opt.value = m.name;
+    opt.innerText = `${m.name} [น้ำหนัก ${(m.weight*100).toFixed(1)}%]`;
+    mSel.appendChild(opt);
+  });
+  
+  // Hook onchange to populate values when milestone dropdown changes
+  mSel.onchange = function() {
+    const targetName = this.value;
+    const foundM = (currentProject.milestones || []).find(x => x.name === targetName);
+    if (foundM) {
+      const p = Math.round(foundM.actual_pct * 100);
+      setModalPct(p);
+      document.getElementById('modal-start-date').value = foundM.actual_start || '';
+      document.getElementById('modal-finish-date').value = (p >= 100 && foundM.actual_finish) ? foundM.actual_finish : '';
+    }
+  };
+  
+  if (milestoneName) {
+    mSel.value = milestoneName;
+  }
+  
+  // Set initial slider & dates
+  setModalPct(pctVal);
+  document.getElementById('modal-start-date').value = actStart || '';
+  document.getElementById('modal-finish-date').value = (pctVal >= 100 && actFinish) ? actFinish : '';
+  
+  // Auto-fill password if remembered in session
+  const pwdInput = document.getElementById('modal-editor-password');
+  const sessionPwd = sessionStorage.getItem('kpg_auth_pwd');
+  if (pwdInput) {
+    pwdInput.value = sessionPwd || 'KPGEditor';
+  }
+  
+  modal.classList.remove('hidden');
+  lucide.createIcons();
+}
+
+function closeQuickUpdateModal() {
+  const modal = document.getElementById('update-modal');
+  if (modal) modal.classList.add('hidden');
+}
+
+function setModalPct(val) {
+  const slider = document.getElementById('modal-pct-slider');
+  const display = document.getElementById('modal-pct-display');
+  const finishInput = document.getElementById('modal-finish-date');
+  
+  if (slider) slider.value = val;
+  if (display) display.innerText = val + '%';
+  
+  if (val >= 100) {
+    if (finishInput && !finishInput.value) {
+      finishInput.value = new Date().toISOString().split('T')[0];
+    }
+  } else {
+    if (finishInput) finishInput.value = '';
+  }
+}
+
 async function handleModalSubmit(e) {
   e.preventDefault();
   if (!currentProject) return;
