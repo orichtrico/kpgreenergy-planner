@@ -564,7 +564,7 @@ function renderMilestonesTable(milestones) {
       <td class="py-3 px-3">${catBadge}</td>
       <td class="py-3 px-3 text-center font-mono font-semibold text-slate-700">${weightPct}</td>
       <td class="py-3 px-3 text-slate-500 font-mono">${m.planned_start || '-'} <br><span class="text-slate-400">ถึง</span> ${m.planned_finish || '-'}</td>
-      <td class="py-3 px-3 text-slate-700 font-mono">${m.actual_start || '-'} <br><span class="text-slate-400">ถึง</span> ${m.actual_finish || '-'}</td>
+      <td class="py-3 px-3 text-slate-700 font-mono">${m.actual_start || '-'} <br><span class="text-slate-400">ถึง</span> ${(pctVal >= 100 && m.actual_finish) ? m.actual_finish : '-'}</td>
       <td class="py-3 px-4">
         <div class="flex items-center space-x-2">
           <div class="w-20 bg-slate-100 rounded-full h-2 overflow-hidden">
@@ -588,7 +588,7 @@ function renderMilestonesTable(milestones) {
 }
 
 // =========================================================================
-// PDF REPORT GENERATOR
+// PDF REPORT GENERATOR (Complete 2-Page Executive Report with S-Curve)
 // =========================================================================
 async function generateProjectPDF() {
   if (!currentProject) {
@@ -599,271 +599,260 @@ async function generateProjectPDF() {
   const btn = document.getElementById('btn-gen-pdf');
   const originalHtml = btn.innerHTML;
   btn.disabled = true;
-  btn.innerHTML = `<span class="animate-spin mr-1">⏳</span> กำลังสร้าง PDF...`;
+  btn.innerHTML = `<span class="animate-spin mr-1">⏳</span> กำลังสร้าง PDF พร้อมกราฟ S-Curve...`;
   
   const p = currentProject;
   const now = new Date();
   const dateStr = now.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
   
-  // Build PDF HTML Template
+  // 1. Capture S-Curve Chart as Image
+  let scurveImgUri = '';
+  try {
+    if (projectScurveChart && typeof projectScurveChart.dataURI === 'function') {
+      const chartRes = await projectScurveChart.dataURI();
+      scurveImgUri = chartRes.imgURI || '';
+    }
+  } catch (chartErr) {
+    console.warn("Could not export chart as dataURI:", chartErr);
+  }
+
+  // 2. Build Milestone Rows for all 33 items
   let milestoneRows = '';
   (p.milestones || []).forEach((m, idx) => {
     const pct = Math.round(m.actual_pct * 100);
     const weight = (m.weight * 100).toFixed(1);
     const contrib = (m.actual_contribution * 100).toFixed(2);
+    const bgRow = (idx % 2 === 1) ? '#f8fafc' : '#ffffff';
+    
+    let statusText = 'รอดำเนินการ';
+    let statusColor = '#64748b';
+    let statusBg = '#f1f5f9';
+    if (m.status === 'COMPLETED' || pct >= 100) {
+      statusText = 'เสร็จสมบูรณ์';
+      statusColor = '#065f46';
+      statusBg = '#d1fae5';
+    } else if (m.status === 'IN_PROGRESS' || pct > 0) {
+      statusText = 'กำลังดำเนินงาน';
+      statusColor = '#92400e';
+      statusBg = '#fef3c7';
+    }
+    
+    const actFinishDisplay = (pct >= 100 && m.actual_finish) ? m.actual_finish : '-';
+    
     milestoneRows += `
-      <tr style="border-bottom: 1px solid #e2e8f0; font-size: 11px;">
-        <td style="padding: 6px 8px; font-weight: 500;">${idx+1}. ${m.name}</td>
-        <td style="padding: 6px 8px; text-align: center;">${weight}%</td>
-        <td style="padding: 6px 8px; text-align: center;">${m.planned_start || '-'} ~ ${m.planned_finish || '-'}</td>
-        <td style="padding: 6px 8px; text-align: center;">${m.actual_start || '-'} ~ ${m.actual_finish || '-'}</td>
-        <td style="padding: 6px 8px; text-align: center; font-weight: bold; color: ${pct>=100 ? '#059669' : '#d97706'};">${pct}%</td>
-        <td style="padding: 6px 8px; text-align: center; color: #2563eb; font-weight: 600;">${contrib}%</td>
-        <td style="padding: 6px 8px; text-align: center;">${m.status === 'COMPLETED' ? 'เสร็จสิ้น' : (m.status === 'IN_PROGRESS' ? 'กำลังทำ' : 'รอดำเนินการ')}</td>
+      <tr style="background: ${bgRow}; border-bottom: 1px solid #e2e8f0; font-size: 8.5px; line-height: 1.2;">
+        <td style="padding: 4px 6px; text-align: center; color: #64748b; font-weight: 600;">${idx+1}</td>
+        <td style="padding: 4px 6px; font-weight: 600; color: #0f172a; max-width: 220px;">${m.name}</td>
+        <td style="padding: 4px 6px; text-align: center; color: #475569;">${weight}%</td>
+        <td style="padding: 4px 6px; text-align: center; color: #475569; font-family: monospace;">${m.planned_start || '-'} ~ ${m.planned_finish || '-'}</td>
+        <td style="padding: 4px 6px; text-align: center; color: #0f172a; font-family: monospace; font-weight: 500;">${m.actual_start || '-'} ~ ${actFinishDisplay}</td>
+        <td style="padding: 4px 6px; text-align: center; font-weight: bold; color: ${pct>=100 ? '#059669' : (pct>0 ? '#d97706' : '#94a3b8')};">${pct}%</td>
+        <td style="padding: 4px 6px; text-align: center; color: #2563eb; font-weight: 600;">${contrib}%</td>
+        <td style="padding: 4px 6px; text-align: center;">
+          <span style="background: ${statusBg}; color: ${statusColor}; padding: 1.5px 5px; border-radius: 4px; font-size: 7.5px; font-weight: 600; white-space: nowrap;">${statusText}</span>
+        </td>
       </tr>
     `;
   });
 
   const reportContainer = document.getElementById('printable-report');
   reportContainer.innerHTML = `
-    <div style="font-family: 'Prompt', sans-serif; color: #1e293b; padding: 20px; max-width: 800px; margin: 0 auto;">
+    <div style="font-family: 'Prompt', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #0f172a; width: 780px; margin: 0 auto; line-height: 1.3; background: #ffffff;">
       
-      <!-- Report Header -->
-      <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 15px;">
+      <!-- ================= PAGE 1: EXECUTIVE SUMMARY & S-CURVE ================= -->
+      <div style="padding: 16px 20px; min-height: 1060px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: space-between;">
+        
         <div>
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <div style="background: #f59e0b; width: 28px; height: 28px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; color: white; font-weight: bold;">⚡</div>
-            <h1 style="font-size: 20px; font-weight: bold; margin: 0; color: #0f172a;">KPGreenergy Planner</h1>
+          <!-- Compact Modern Header (Dark Green Theme) -->
+          <div style="background: #043327; color: #ffffff; border-radius: 10px; padding: 12px 18px; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <div style="background: #f59e0b; width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px;">⚡</div>
+              <div>
+                <h1 style="font-size: 18px; font-weight: 800; margin: 0; letter-spacing: -0.3px; color: #ffffff;">KPGreenergy Planner</h1>
+                <p style="font-size: 10px; color: #a7f3d0; margin: 2px 0 0 0;">รายงานความก้าวหน้าโครงการพลังงานแสงอาทิตย์ (Executive Progress Report)</p>
+              </div>
+            </div>
+            <div style="text-align: right; font-size: 10px; color: #e2e8f0;">
+              <div>วันที่ออกรายงาน: <strong style="color: #ffffff;">${dateStr}</strong></div>
+              <div style="margin-top: 2px;">กลุ่ม: <strong style="color: #fef08a;">${p.business_unit}</strong> | Lot: <strong style="color: #fef08a;">${p.lot}</strong></div>
+            </div>
           </div>
-          <p style="font-size: 11px; color: #64748b; margin: 2px 0 0 0;">รายงานความก้าวหน้าโครงการพลังงานแสงอาทิตย์ (Project Progress Report)</p>
+
+          <!-- Project Identity Box -->
+          <div style="background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 10px; padding: 12px 16px; margin-bottom: 14px;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 8px;">
+              <div>
+                <span style="font-size: 9px; text-transform: uppercase; font-weight: 700; color: #64748b; letter-spacing: 0.5px;">ชื่อโครงการ / Project Name</span>
+                <h2 style="font-size: 16px; font-weight: 800; margin: 2px 0 0 0; color: #043327;">${p.name}</h2>
+              </div>
+              <div style="text-align: right;">
+                <span style="font-size: 9px; font-weight: 700; color: #64748b;">สถานะโครงการ</span><br>
+                <span style="background: ${p.status==='COMPLETED' ? '#d1fae5' : (p.status==='DELAYED' ? '#ffe4e6' : '#dbeafe')}; color: ${p.status==='COMPLETED' ? '#065f46' : (p.status==='DELAYED' ? '#9f1239' : '#1e40af')}; padding: 3px 10px; border-radius: 9999px; font-size: 11px; font-weight: 700; display: inline-block; margin-top: 2px;">
+                  ${p.status_th} (${p.variance_pct>=0 ? '+'+p.variance_pct : p.variance_pct}%)
+                </span>
+              </div>
+            </div>
+
+            <!-- Key Metrics Grid -->
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; font-size: 10px;">
+              <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px;">
+                <span style="color: #64748b; font-size: 9px;">กำลังการผลิตติดตั้ง:</span><br>
+                <strong style="color: #0f172a; font-size: 13px;">${p.capacity_kwp} kWp</strong>
+              </div>
+              <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px;">
+                <span style="color: #64748b; font-size: 9px;">ประเภทการติดตั้ง:</span><br>
+                <strong style="color: #0f172a; font-size: 12px;">${p.installation_type}</strong>
+              </div>
+              <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px;">
+                <span style="color: #64748b; font-size: 9px;">ผลงานจริงสะสม:</span><br>
+                <strong style="color: #059669; font-size: 13px;">${p.actual_progress_pct}%</strong>
+              </div>
+              <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px;">
+                <span style="color: #64748b; font-size: 9px;">แผนงานสะสม:</span><br>
+                <strong style="color: #2563eb; font-size: 13px;">${p.planned_progress_pct}%</strong>
+              </div>
+            </div>
+
+            <!-- Timeline details -->
+            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; font-size: 9.5px; border-top: 1px dashed #e2e8f0; margin-top: 8px; padding-top: 6px; color: #475569;">
+              <div>📅 ระยะเวลาตามแผน: <strong>${p.planned_start || '-'}</strong> ถึง <strong>${p.planned_finish || '-'}</strong></div>
+              <div>⚡ ระยะเวลาจริง: <strong>${p.actual_start || '-'}</strong> ถึง <strong>${p.actual_finish || '-'}</strong></div>
+            </div>
+          </div>
+
+          <!-- S-Curve Section Header -->
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <h3 style="font-size: 13px; font-weight: 800; margin: 0; color: #043327; display: flex; align-items: center; gap: 6px;">
+              <span style="color: #10b981;">📈</span> กราฟความคืบหน้าสะสมรายสัปดาห์ (Weekly S-Curve Performance)
+            </h3>
+            <div style="font-size: 9px; color: #64748b;">
+              <span style="display: inline-block; width: 10px; height: 3px; background: #2563eb; margin-right: 3px;"></span>แผนสะสม
+              <span style="display: inline-block; width: 10px; height: 3px; background: #10b981; margin: 0 3px 0 8px;"></span>จริงสะสม
+              <span style="display: inline-block; width: 8px; height: 8px; background: #93c5fd; margin: 0 3px 0 8px;"></span>แผนรายสัปดาห์
+              <span style="display: inline-block; width: 8px; height: 8px; background: #6ee7b7; margin: 0 3px 0 8px;"></span>จริงรายสัปดาห์
+            </div>
+          </div>
+
+          <!-- Embedded S-Curve Chart Container -->
+          <div style="background: #ffffff; border: 1.5px solid #cbd5e1; border-radius: 10px; padding: 10px; text-align: center; margin-bottom: 14px;">
+            ${scurveImgUri ? `
+              <img src="${scurveImgUri}" style="width: 100%; height: 320px; object-fit: contain; display: block; margin: 0 auto;" />
+            ` : `
+              <div style="padding: 40px; color: #94a3b8; font-size: 12px;">(กำลังเตรียมภาพกราฟ S-Curve ความละเอียดสูง)</div>
+            `}
+          </div>
+
+          <!-- S-Curve KPI Summary Bar -->
+          <div style="background: #f1f5f9; border-radius: 8px; padding: 10px 14px; display: grid; grid-template-columns: repeat(3, 1fr); text-align: center; font-size: 10.5px; border: 1px solid #e2e8f0;">
+            <div>
+              <span style="color: #64748b;">แผนงานสะสมปัจจุบัน:</span><br>
+              <strong style="color: #2563eb; font-size: 15px;">${p.planned_progress_pct}%</strong>
+            </div>
+            <div style="border-left: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1;">
+              <span style="color: #64748b;">ผลงานจริงสะสมปัจจุบัน:</span><br>
+              <strong style="color: #059669; font-size: 15px;">${p.actual_progress_pct}%</strong>
+            </div>
+            <div>
+              <span style="color: #64748b;">ผลต่างความคืบหน้า (Variance):</span><br>
+              <strong style="color: ${p.variance_pct<0 ? '#e11d48' : '#059669'}; font-size: 15px;">${p.variance_pct>=0 ? '+'+p.variance_pct : p.variance_pct}%</strong>
+            </div>
+          </div>
+
         </div>
-        <div style="text-align: right; font-size: 11px; color: #475569;">
-          <p style="margin: 0; font-weight: 600;">วันที่ออกรายงาน: ${dateStr}</p>
-          <p style="margin: 2px 0 0 0;">Lot: <strong>${p.lot}</strong> | กลุ่ม: <strong>${p.business_unit}</strong></p>
+
+        <!-- Page 1 Footer -->
+        <div style="border-top: 1px solid #cbd5e1; padding-top: 8px; margin-top: 10px; display: flex; justify-content: space-between; font-size: 8.5px; color: #94a3b8;">
+          <div>KPGreenergy Planner • เอกสารรายงานความคืบหน้าโครงการอัตโนมัติ</div>
+          <div>หน้า 1 / 2 (หน้าสรุปและกราฟ S-Curve)</div>
         </div>
+
       </div>
 
-      <!-- Project Key Information Box -->
-      <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; margin-bottom: 15px;">
-        <h2 style="font-size: 16px; font-weight: bold; margin: 0 0 8px 0; color: #0f172a;">โครงการ: ${p.name}</h2>
-        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; font-size: 11px;">
-          <div>
-            <span style="color: #64748b;">กำลังการผลิต:</span><br>
-            <strong style="color: #0f172a; font-size: 13px;">${p.capacity_kwp} kWp</strong>
-          </div>
-          <div>
-            <span style="color: #64748b;">ประเภทการติดตั้ง:</span><br>
-            <strong style="color: #0f172a;">${p.installation_type} (Type ${p.type_code})</strong>
-          </div>
-          <div>
-            <span style="color: #64748b;">ผลงานจริง / แผนงาน:</span><br>
-            <strong style="color: #059669; font-size: 13px;">${p.actual_progress_pct}%</strong> <span style="color: #64748b;">/ ${p.planned_progress_pct}%</span>
-          </div>
-          <div>
-            <span style="color: #64748b;">สถานะโครงการ:</span><br>
-            <strong style="color: ${p.status==='DELAYED' ? '#e11d48' : '#059669'};">${p.status_th} (${p.variance_pct>=0 ? '+'+p.variance_pct : p.variance_pct}%)</strong>
-          </div>
-        </div>
-        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; font-size: 10px; border-top: 1px dashed #cbd5e1; margin-top: 8px; padding-top: 6px; color: #475569;">
-          <div>แผนงาน: <strong>${p.planned_start || '-'}</strong> ถึง <strong>${p.planned_finish || '-'}</strong></div>
-          <div>วันจริง: <strong>${p.actual_start || '-'}</strong> ถึง <strong>${p.actual_finish || '-'}</strong></div>
-        </div>
-      </div>
+      <!-- ================= PAGE BREAK ================= -->
+      <div style="page-break-before: always; height: 1px;"></div>
 
-      <!-- S-Curve Summary Progress -->
-      <div style="margin-bottom: 15px;">
-        <h3 style="font-size: 13px; font-weight: bold; margin: 0 0 6px 0; color: #0f172a;">สรุปผลงานสะสม (S-Curve Cumulative Summary)</h3>
-        <div style="background: #f1f5f9; border-radius: 6px; padding: 10px; display: flex; justify-content: space-around; font-size: 11px;">
-          <div>แผนงานสะสมปัจจุบัน: <strong style="color: #2563eb; font-size: 14px;">${p.planned_progress_pct}%</strong></div>
-          <div>ผลงานจริงสะสมปัจจุบัน: <strong style="color: #059669; font-size: 14px;">${p.actual_progress_pct}%</strong></div>
-          <div>ผลต่าง (Variance): <strong style="color: ${p.variance_pct<0 ? '#e11d48' : '#059669'}; font-size: 14px;">${p.variance_pct}%</strong></div>
+      <!-- ================= PAGE 2: FULL 33 MILESTONES BREAKDOWN ================= -->
+      <div style="padding: 16px 20px; min-height: 1060px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: space-between;">
+        
+        <div>
+          <!-- Header Page 2 -->
+          <div style="border-bottom: 2px solid #043327; padding-bottom: 8px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: flex-end;">
+            <div>
+              <h3 style="font-size: 14px; font-weight: 800; margin: 0; color: #043327;">รายละเอียดขั้นตอนการดำเนินงานทั้งหมด (Milestones Breakdown - 33 รายการ)</h3>
+              <p style="font-size: 9.5px; color: #64748b; margin: 2px 0 0 0;">โครงการ: <strong style="color: #0f172a;">${p.name}</strong> (${p.capacity_kwp} kWp)</p>
+            </div>
+            <div style="font-size: 9px; color: #64748b; text-align: right;">
+              รวมทั้งหมด <strong>33 ขั้นตอน</strong> (สิ้นสุดที่ Punch list)
+            </div>
+          </div>
+
+          <!-- All 33 Milestones Table -->
+          <table style="width: 100%; border-collapse: collapse; text-align: left; border: 1px solid #cbd5e1;">
+            <thead>
+              <tr style="background: #043327; color: #ffffff; font-size: 8.5px; font-weight: 700;">
+                <th style="padding: 5px 6px; text-align: center; width: 25px;">ลำดับ</th>
+                <th style="padding: 5px 6px;">รายการงาน (Milestone)</th>
+                <th style="padding: 5px 6px; text-align: center; width: 45px;">น้ำหนัก</th>
+                <th style="padding: 5px 6px; text-align: center; width: 110px;">แผนงานเริ่ม ~ เสร็จ</th>
+                <th style="padding: 5px 6px; text-align: center; width: 110px;">วันจริงเริ่ม ~ เสร็จ</th>
+                <th style="padding: 5px 6px; text-align: center; width: 45px;">% งาน</th>
+                <th style="padding: 5px 6px; text-align: center; width: 45px;">% สะสม</th>
+                <th style="padding: 5px 6px; text-align: center; width: 75px;">สถานะ</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${milestoneRows}
+            </tbody>
+          </table>
+
+          <!-- Signatures Box -->
+          <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin-top: 18px; font-size: 9px; color: #334155;">
+            <div style="border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px 14px; text-align: center; background: #fafafa;">
+              <p style="margin: 0 0 35px 0; font-weight: 600;">ผู้รายงานข้อมูล / วิศวกรโครงการ (Project Engineer)</p>
+              <p style="margin: 0; border-top: 1px dashed #94a3b8; padding-top: 4px;">(...........................................................................)</p>
+              <p style="margin: 2px 0 0 0; color: #64748b;">วันที่ ..... / ..... / .........</p>
+            </div>
+            <div style="border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px 14px; text-align: center; background: #fafafa;">
+              <p style="margin: 0 0 35px 0; font-weight: 600;">ผู้จัดการโครงการ / ผู้ตรวจสอบ (Project Manager)</p>
+              <p style="margin: 0; border-top: 1px dashed #94a3b8; padding-top: 4px;">(...........................................................................)</p>
+              <p style="margin: 2px 0 0 0; color: #64748b;">วันที่ ..... / ..... / .........</p>
+            </div>
+          </div>
+
         </div>
-      </div>
 
-      <!-- Milestones Breakdown Table -->
-      <div>
-        <h3 style="font-size: 13px; font-weight: bold; margin: 0 0 6px 0; color: #0f172a;">รายละเอียดขั้นตอนการดำเนินงาน (Milestone Breakdown)</h3>
-        <table style="width: 100%; border-collapse: collapse; text-align: left;">
-          <thead>
-            <tr style="background: #e2e8f0; color: #334155; font-size: 10px; text-transform: uppercase;">
-              <th style="padding: 6px 8px;">รายการงาน (Milestone)</th>
-              <th style="padding: 6px 8px; text-align: center;">น้ำหนัก</th>
-              <th style="padding: 6px 8px; text-align: center;">แผนเริ่ม-เสร็จ</th>
-              <th style="padding: 6px 8px; text-align: center;">วันจริงเริ่ม-เสร็จ</th>
-              <th style="padding: 6px 8px; text-align: center;">% งาน</th>
-              <th style="padding: 6px 8px; text-align: center;">% สะสม</th>
-              <th style="padding: 6px 8px; text-align: center;">สถานะ</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${milestoneRows}
-          </tbody>
-        </table>
-      </div>
+        <!-- Page 2 Footer -->
+        <div style="border-top: 1px solid #cbd5e1; padding-top: 8px; margin-top: 10px; display: flex; justify-content: space-between; font-size: 8.5px; color: #94a3b8;">
+          <div>KPGreenergy Planner • เอกสารรายงานความคืบหน้าโครงการอัตโนมัติ</div>
+          <div>หน้า 2 / 2 (ตารางขั้นตอนการดำเนินงานทั้งหมด)</div>
+        </div>
 
-      <!-- Report Footer -->
-      <div style="margin-top: 25px; border-top: 1px solid #cbd5e1; padding-top: 12px; display: flex; justify-content: space-between; font-size: 10px; color: #94a3b8;">
-        <div>KPGreenergy Planner • เอกสารออกโดยระบบติดตามโครงการอัตโนมัติ</div>
-        <div>หน้า 1 / 1</div>
       </div>
 
     </div>
   `;
 
-  // Export options for html2pdf
+  // 3. Export Options for html2pdf
+  const filenameStr = "KPGreenergy_Report_" + p.name.replace(/\s+/g, '_') + "_" + now.toISOString().split('T')[0] + ".pdf";
   const opt = {
-    margin: [10, 10, 10, 10],
-    filename: `KPGreenergy_Report_${p.name.replace(/\s+/g, '_')}_${now.toISOString().split('T')[0]}.pdf`,
+    margin: [0, 0, 0, 0],
+    filename: filenameStr,
     image: { type: 'jpeg', quality: 0.98 },
-    html2canvas: { scale: 2, useCORS: true },
-    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    html2canvas: { scale: 2, useCORS: true, logging: false },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+    pagebreak: { mode: ['css', 'legacy'] }
   };
 
   try {
     await html2pdf().set(opt).from(reportContainer.firstElementChild).save();
-    showToast(`สร้างรายงาน PDF โครงการ ${p.name} สำเร็จแล้ว!`);
+    showToast(`สร้างรายงาน PDF โครงการ ${p.name} พร้อม S-Curve สำเร็จแล้ว!`);
   } catch (err) {
     console.error("PDF generation error:", err);
-    // Fallback to window.print()
     window.print();
   } finally {
     btn.disabled = false;
     btn.innerHTML = originalHtml;
     lucide.createIcons();
-  }
-}
-
-// =========================================================================
-// TAB 3: COMPARISON TAB
-// =========================================================================
-function renderComparisonTab() {
-  const lotFilter = document.getElementById('compare-lot-select').value;
-  let list = allProjects;
-  if (lotFilter !== 'ALL') {
-    list = allProjects.filter(p => p.lot === lotFilter);
-  }
-  
-  const topList = list.slice(0, 25);
-  
-  const names = topList.map(p => p.name.length > 20 ? p.name.substring(0, 18) + '...' : p.name);
-  const planData = topList.map(p => p.planned_progress_pct);
-  const actData = topList.map(p => p.actual_progress_pct);
-  
-  const options = {
-    series: [
-      { name: 'แผนงาน (%)', data: planData },
-      { name: 'ผลงานจริง (%)', data: actData }
-    ],
-    chart: {
-      type: 'bar',
-      height: 380,
-      toolbar: { show: true },
-      fontFamily: 'Prompt, sans-serif'
-    },
-    colors: ['#93c5fd', '#10b981'],
-    plotOptions: {
-      bar: {
-        horizontal: false,
-        columnWidth: '60%',
-        borderRadius: 3
-      }
-    },
-    dataLabels: { enabled: false },
-    xaxis: {
-      categories: names,
-      labels: { rotate: -45, style: { fontSize: '10px' } }
-    },
-    yaxis: {
-      max: 100,
-      labels: { formatter: val => val + '%' }
-    },
-    tooltip: {
-      y: { formatter: val => val + '%' }
-    },
-    legend: { position: 'top' }
-  };
-  
-  const chartEl = document.getElementById('comparison-bar-chart');
-  if (chartEl) {
-    if (comparisonBarChart) comparisonBarChart.destroy();
-    comparisonBarChart = new ApexCharts(chartEl, options);
-    comparisonBarChart.render();
-  }
-  
-  // Render Delayed Table
-  const delayedList = allProjects.filter(p => p.status === 'DELAYED' || p.variance_pct < -5);
-  const delayedTbody = document.getElementById('delayed-table-body');
-  delayedTbody.innerHTML = '';
-  
-  delayedList.forEach(p => {
-    const tr = document.createElement('tr');
-    tr.className = 'hover:bg-rose-50/40 transition';
-    tr.innerHTML = `
-      <td class="py-3 px-4 font-semibold text-slate-900">${p.name}</td>
-      <td class="py-3 px-3">${p.business_unit}</td>
-      <td class="py-3 px-3"><span class="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-xs">${p.lot}</span></td>
-      <td class="py-3 px-3 font-mono">${p.capacity_kwp}</td>
-      <td class="py-3 px-3 text-center font-semibold text-slate-500">${p.planned_progress_pct}%</td>
-      <td class="py-3 px-3 text-center font-bold text-rose-600">${p.actual_progress_pct}%</td>
-      <td class="py-3 px-3 text-center">
-        <span class="px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 font-bold">${p.variance_pct}%</span>
-      </td>
-      <td class="py-3 px-3 text-center">
-        <button onclick="selectAndOpenProject('${p.id}')" class="text-xs bg-amber-500 text-white px-2.5 py-1 rounded-lg font-medium hover:bg-amber-600 transition">
-          ดู S-Curve
-        </button>
-      </td>
-    `;
-    delayedTbody.appendChild(tr);
-  });
-}
-
-function selectAndOpenProject(prjId) {
-  selectProject(prjId);
-  switchTab('project');
-}
-
-// =========================================================================
-// QUICK UPDATE MODAL
-// =========================================================================
-function openQuickUpdateModal(milestoneName, pctVal = 100, actStart = '', actFinish = '') {
-  if (!currentProject) return;
-  
-  const pwdInput = document.getElementById('modal-editor-password');
-  const sessionPwd = sessionStorage.getItem('kpg_auth_pwd');
-  if (pwdInput && sessionPwd) {
-    pwdInput.value = sessionPwd;
-  }
-  
-  document.getElementById('modal-subtitle').innerText = `โครงการ: ${currentProject.name}`;
-  const mSelect = document.getElementById('modal-milestone-select');
-  mSelect.innerHTML = '';
-  
-  (currentProject.milestones || []).forEach(m => {
-    mSelect.innerHTML += `<option value="${m.name}">${m.name} (${(m.weight*100).toFixed(1)}%)</option>`;
-  });
-  
-  if (milestoneName) {
-    mSelect.value = milestoneName;
-  }
-  
-  document.getElementById('modal-pct-slider').value = pctVal;
-  document.getElementById('modal-pct-display').innerText = pctVal + '%';
-  document.getElementById('modal-start-date').value = actStart || new Date().toISOString().split('T')[0];
-  document.getElementById('modal-finish-date').value = actFinish || (pctVal >= 100 ? new Date().toISOString().split('T')[0] : '');
-  
-  document.getElementById('update-modal').classList.remove('hidden');
-}
-
-function closeQuickUpdateModal() {
-  document.getElementById('update-modal').classList.add('hidden');
-}
-
-function setModalPct(val) {
-  document.getElementById('modal-pct-slider').value = val;
-  document.getElementById('modal-pct-display').innerText = val + '%';
-  if (val >= 100) {
-    document.getElementById('modal-finish-date').value = new Date().toISOString().split('T')[0];
   }
 }
 

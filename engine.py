@@ -552,8 +552,10 @@ class ProjectEngine:
                 m["actual_pct"] = max(0.0, min(1.0, actual_pct))
                 if actual_start:
                     m["actual_start"] = actual_start
-                if actual_finish:
-                    m["actual_finish"] = actual_finish
+                if m["actual_pct"] >= 1.0:
+                    m["actual_finish"] = actual_finish or m.get("actual_finish") or date.today().strftime('%Y-%m-%d')
+                else:
+                    m["actual_finish"] = None
                 m["status"] = "COMPLETED" if m["actual_pct"] >= 1.0 else ("IN_PROGRESS" if m["actual_pct"] > 0 else "PENDING")
                 m["actual_contribution"] = round(m["actual_pct"] * m["weight"], 4)
                 updated = True
@@ -620,8 +622,10 @@ class ProjectEngine:
                         m["actual_pct"] = max(0.0, min(1.0, val))
                         if a_start:
                             m["actual_start"] = a_start
-                        if a_finish:
-                            m["actual_finish"] = a_finish
+                        if val >= 1.0:
+                            m["actual_finish"] = a_finish if a_finish else (m.get("actual_finish") or date.today().strftime('%Y-%m-%d'))
+                        else:
+                            m["actual_finish"] = None
                         m["status"] = "COMPLETED" if m["actual_pct"] >= 1.0 else ("IN_PROGRESS" if m["actual_pct"] > 0 else "PENDING")
                         m["actual_contribution"] = round(m["actual_pct"] * m["weight"], 4)
                         break

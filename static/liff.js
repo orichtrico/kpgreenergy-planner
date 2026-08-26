@@ -132,7 +132,7 @@ function onLiffMilestoneChange() {
     }
     
     if (m.actual_start) document.getElementById('liff-start-date').value = m.actual_start;
-    if (m.actual_finish) document.getElementById('liff-finish-date').value = m.actual_finish;
+    document.getElementById('liff-finish-date').value = (pctVal >= 100 && m.actual_finish) ? m.actual_finish : '';
   } else {
     mInfo.classList.add('hidden');
   }
@@ -141,8 +141,13 @@ function onLiffMilestoneChange() {
 function setLiffPct(val) {
   document.getElementById('liff-pct-slider').value = val;
   document.getElementById('liff-pct-val').innerText = val + '%';
+  const finishInput = document.getElementById('liff-finish-date');
   if (val >= 100) {
-    document.getElementById('liff-finish-date').value = new Date().toISOString().split('T')[0];
+    if (finishInput && !finishInput.value) {
+      finishInput.value = new Date().toISOString().split('T')[0];
+    }
+  } else {
+    if (finishInput) finishInput.value = '';
   }
 }
 
