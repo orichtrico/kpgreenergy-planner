@@ -178,7 +178,7 @@ function switchTab(tabId) {
   // Trigger chart resizes
   if (tabId === 'overview' && phaseBarChart) phaseBarChart.render();
   if (tabId === 'project' && projectScurveChart) projectScurveChart.render();
-  if (tabId === 'comparison' && comparisonBarChart) comparisonBarChart.render();
+  if (tabId === 'comparison') renderComparisonTab();
 }
 
 // =========================================================================
@@ -588,6 +588,151 @@ function renderMilestonesTable(milestones) {
 }
 
 // =========================================================================
+// =========================================================================
+// TAB 3: MULTI-PROJECT COMPARISON & ANALYTICS
+// =========================================================================
+function renderComparisonTab() {
+  if (!allProjects || allProjects.length === 0) return;
+  
+  // 1. Populate Lot Filter Dropdown if needed
+  const lotSel = document.getElementById('compare-lot-select');
+  if (lotSel && lotSel.options.length <= 1 && globalOverview && globalOverview.lots) {
+    const currentVal = lotSel.value;
+    lotSel.innerHTML = '<option value="ALL">แสดงทุกโครงการ (Top 25 กำลังผลิต)</option>';
+    globalOverview.lots.forEach(lot => {
+      lotSel.innerHTML += `<option value="${lot}">${lot}</option>`;
+    });
+    lotSel.value = currentVal || 'ALL';
+  }
+  
+  const selectedLot = lotSel ? lotSel.value : 'ALL';
+  
+  // 2. Filter Projects for Comparison
+  let targetProjects = [];
+  if (selectedLot === 'ALL') {
+    // Sort by capacity descending and take top 25
+    targetProjects = [...allProjects]
+      .sort((a, b) => b.capacity_kwp - a.capacity_kwp)
+      .slice(0, 25);
+  } else {
+    targetProjects = allProjects.filter(p => p.lot === selectedLot);
+  }
+  
+  const categories = targetProjects.map(p => p.name.length > 25 ? p.name.substring(0, 25) + '...' : p.name);
+  const plannedData = targetProjects.map(p => p.planned_progress_pct);
+  const actualData = targetProjects.map(p => p.actual_progress_pct);
+  
+  // 3. Render ApexCharts Horizontal Bar Comparison
+  const chartHeight = Math.max(380, targetProjects.length * 28);
+  const compOptions = {
+    series: [
+      {
+        name: 'แผนงาน (% Planned)',
+        data: plannedData
+      },
+      {
+        name: 'ผลงานจริง (% Actual)',
+        data: actualData
+      }
+    ],
+    chart: {
+      type: 'bar',
+      height: chartHeight,
+      toolbar: { show: true, tools: { download: true } },
+      fontFamily: 'Prompt, sans-serif'
+    },
+    plotOptions: {
+      bar: {
+        horizontal: true,
+        dataLabels: { position: 'top' },
+        borderRadius: 4,
+        barHeight: '75%'
+      }
+    },
+    colors: ['#2563eb', '#10b981'],
+    dataLabels: {
+      enabled: true,
+      offsetX: 18,
+      style: { fontSize: '9.5px', colors: ['#334155'], fontWeight: 600 },
+      formatter: val => val + '%'
+    },
+    stroke: { show: true, width: 1, colors: ['#fff'] },
+    xaxis: {
+      categories: categories,
+      max: 100,
+      title: { text: '% ความก้าวหน้า' },
+      labels: { formatter: val => Math.round(val) + '%' }
+    },
+    yaxis: {
+      labels: {
+        style: { fontSize: '11px', fontWeight: 600, colors: '#0f172a' },
+        maxWidth: 200
+      }
+    },
+    tooltip: {
+      y: { formatter: val => val + '%' }
+    },
+    legend: {
+      position: 'top',
+      horizontalAlign: 'left',
+      fontSize: '12px',
+      markers: { radius: 3 }
+    }
+  };
+  
+  const compChartEl = document.getElementById('comparison-bar-chart');
+  if (compChartEl) {
+    if (comparisonBarChart) comparisonBarChart.destroy();
+    comparisonBarChart = new ApexCharts(compChartEl, compOptions);
+    comparisonBarChart.render();
+  }
+  
+  // 4. Render Delayed Projects Watchlist Table
+  const tbody = document.getElementById('delayed-table-body');
+  if (tbody) {
+    tbody.innerHTML = '';
+    const delayedProjects = [...allProjects]
+      .filter(p => p.variance_pct < -0.1 || p.status === 'DELAYED')
+      .sort((a, b) => a.variance_pct - b.variance_pct);
+      
+    if (delayedProjects.length === 0) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="8" class="text-center py-6 text-emerald-700 font-semibold">
+            🎉 ยอดเยี่ยมมาก! ไม่มีโครงการที่ล่าช้ากว่าแผนงานในขณะนี้
+          </td>
+        </tr>
+      `;
+    } else {
+      delayedProjects.forEach(p => {
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-rose-50/40 transition';
+        tr.innerHTML = `
+          <td class="py-3 px-4 font-bold text-slate-900">${p.name}</td>
+          <td class="py-3 px-3 text-slate-600">${p.business_unit}</td>
+          <td class="py-3 px-3"><span class="px-2 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-semibold">${p.lot}</span></td>
+          <td class="py-3 px-3 font-mono font-medium">${p.capacity_kwp}</td>
+          <td class="py-3 px-3 text-center font-mono text-blue-600 font-semibold">${p.planned_progress_pct}%</td>
+          <td class="py-3 px-3 text-center font-mono text-emerald-600 font-semibold">${p.actual_progress_pct}%</td>
+          <td class="py-3 px-3 text-center font-mono font-bold text-rose-600">${p.variance_pct}%</td>
+          <td class="py-3 px-3 text-center">
+            <button onclick="openProjectFromComparison('${p.id}')" class="px-2.5 py-1 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-[11px] font-semibold transition">
+              ดูโครงการ
+            </button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+  }
+}
+
+function openProjectFromComparison(projectId) {
+  selectProject(projectId);
+  switchTab('project');
+}
+
+
 // PDF REPORT GENERATOR (Complete 2-Page Executive Report with S-Curve)
 // =========================================================================
 async function generateProjectPDF() {
