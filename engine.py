@@ -45,6 +45,7 @@ class ProjectEngine:
         self.milestone_categories = {}
         self.projects = []
         self.projects_dict = {}
+        self.google_sheet_webapp_url = ''
         
         # Load from cache first
         if not self.load_from_cache():
@@ -67,6 +68,7 @@ class ProjectEngine:
                         self.weight_matrix = {int(k): v for k, v in data.get('weight_matrix', {}).items()}
                         self.milestone_names = data.get('milestone_names', [])
                         self.milestone_categories = data.get('milestone_categories', {})
+                        self.google_sheet_webapp_url = data.get('google_sheet_webapp_url', '')
                         self.projects = projects
                         self.projects_dict = {p['id']: p for p in self.projects}
                         print(f"[Fast Engine] Loaded {len(self.projects)} projects successfully from {os.path.basename(path)}.")
@@ -84,7 +86,8 @@ class ProjectEngine:
                 'weight_matrix': self.weight_matrix,
                 'milestone_names': self.milestone_names,
                 'milestone_categories': self.milestone_categories,
-                'projects': self.projects
+                'projects': self.projects,
+                'google_sheet_webapp_url': self.google_sheet_webapp_url
             }
             tmp_path = self.cache_path + '.tmp'
             with open(tmp_path, 'w', encoding='utf-8') as f:
@@ -221,6 +224,7 @@ class ProjectEngine:
 
         self.projects = []
         self.projects_dict = {}
+        self.google_sheet_webapp_url = ''
         
         for r in range(6, ws_plan.max_row + 1):
             p_name = ws_plan.cell(row=r, column=3).value

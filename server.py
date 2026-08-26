@@ -198,7 +198,7 @@ async def update_milestone(req: MilestoneUpdateRequest):
     # 2. Write-back to Google Sheet via Google Apps Script Web App
     gsheet_synced = False
     gsheet_msg = ""
-    target_write_url = req.sheet_url or ""
+    target_write_url = req.sheet_url or getattr(engine, "google_sheet_webapp_url", "") or ""
     
     if "script.google.com" in target_write_url:
         try:
@@ -413,6 +413,23 @@ async def sync_google_sheet(request: Request):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/save-webapp-url")
+async def save_webapp_url_endpoint(request: Request):
+    try:
+        body = await request.json()
+        url = body.get("webapp_url", "").strip()
+        if url:
+            engine.google_sheet_webapp_url = url
+            engine.save_to_cache()
+            return {"success": True, "message": "บันทึก Google Apps Script Web App URL บนเซิร์ฟเวอร์เรียบร้อยแล้ว (ใช้งานได้กับทุกเครื่องและ LINE LIFF)"}
+        raise HTTPException(status_code=400, detail="Missing webapp_url")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/get-webapp-url")
+async def get_webapp_url_endpoint():
+    return {"webapp_url": getattr(engine, "google_sheet_webapp_url", "")}
 
 @app.get("/api/google-apps-script-code")
 async def get_gas_code():

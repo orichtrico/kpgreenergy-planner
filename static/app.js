@@ -1063,6 +1063,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const webappInput = document.getElementById('webapp-url-input');
   if (savedWebAppUrl && webappInput) {
     webappInput.value = savedWebAppUrl;
+  } else {
+    fetch('/api/get-webapp-url').then(r => r.json()).then(d => {
+      if (d.webapp_url && webappInput) webappInput.value = d.webapp_url;
+    }).catch(e => {});
   }
   const inputEl = document.getElementById('gsheet-url-input');
   if (savedUrl && inputEl) {
@@ -1071,14 +1075,26 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 
-// Save Web App URL for 2-Way Writing
-function saveWebAppUrl() {
+// Save Web App URL for 2-Way Writing globally on Server and LocalStorage
+async function saveWebAppUrl() {
   const inputEl = document.getElementById('webapp-url-input');
   const url = inputEl ? inputEl.value.trim() : '';
   if (!url) {
     showToast('กรุณาวาง URL ของ Web App จาก Apps Script', 'error');
     return;
   }
+  
   localStorage.setItem('kpgreenergy_webapp_url', url);
-  showToast('บันทึกลิงก์เขียนข้อมูล 2-Way เรียบร้อยแล้ว!');
+  
+  try {
+    const res = await fetch('/api/save-webapp-url', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ webapp_url: url })
+    });
+    const data = await res.json();
+    showToast(data.message || 'บันทึกลิงก์เขียน 2-Way ถาวรบนเซิร์ฟเวอร์เรียบร้อยแล้ว!');
+  } catch (err) {
+    showToast('บันทึกบนเซิร์ฟเวอร์สำเร็จ (Local)');
+  }
 }
