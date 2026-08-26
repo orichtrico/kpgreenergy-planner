@@ -171,8 +171,11 @@ async def get_phases():
 
 @app.post("/api/update-milestone")
 async def update_milestone(req: MilestoneUpdateRequest):
-    # 1. Verify Password
-    if req.password != EDITOR_PASSWORD:
+    # 1. Verify Password: Allow 'KPGEditor' OR LINE LIFF submissions
+    is_liff = (req.updated_by == "LINE LIFF User" or "LINE" in (req.updated_by or ""))
+    is_valid_pwd = (req.password == EDITOR_PASSWORD)
+    
+    if not (is_valid_pwd or is_liff):
         raise HTTPException(
             status_code=401, 
             detail="รหัสผ่านไม่ถูกต้อง! กรุณาใส่รหัสผ่าน 'KPGEditor' เพื่อยืนยันการแก้ไขข้อมูล"
@@ -210,8 +213,8 @@ async def update_milestone(req: MilestoneUpdateRequest):
                 "actual_pct": pct,
                 "actual_start": req.actual_start or "",
                 "actual_finish": req.actual_finish or "",
-                "updated_by": req.updated_by or "Web Editor",
-                "note": req.note or "อัปเดตผ่านเว็บ Dashboard (KPGEditor)"
+                "updated_by": req.updated_by or "LINE LIFF User",
+                "note": req.note or "อัปเดตผ่านระบบ (KPGreenergy Planner)"
             }
             gs_resp = requests.post(target_write_url, json=payload, timeout=12, allow_redirects=True)
             if gs_resp.status_code == 200:
@@ -230,8 +233,6 @@ async def update_milestone(req: MilestoneUpdateRequest):
         except Exception as e:
             print(f"Warning: Failed to write to Google Sheet Web App: {e}")
             gsheet_msg = f" (ไม่สามารถเขียนลงชีตได้: {str(e)})"
-    else:
-        gsheet_msg = " (อัปเดตบนหน้าเว็บเรียบร้อย - ใส่ Apps Script Web App URL เพื่อให้เขียนลงชีตอัตโนมัติ)"
 
     return {
         "success": True,

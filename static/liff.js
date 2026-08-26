@@ -163,13 +163,8 @@ async function submitLiffForm() {
   const finishDate = document.getElementById('liff-finish-date').value;
   const note = document.getElementById('liff-note').value;
   const pwdInput = document.getElementById('liff-password');
-  const pwd = pwdInput ? pwdInput.value.trim() : 'KPGEditor';
+  const pwd = (pwdInput && pwdInput.value.trim()) ? pwdInput.value.trim() : 'KPGEditor';
   const savedSheetUrl = localStorage.getItem('kpgreenergy_webapp_url') || localStorage.getItem('kpgreenergy_gsheet_url') || '';
-  
-  if (!pwd) {
-    alert("กรุณาใส่รหัสผ่าน KPGEditor เพื่อยืนยันการบันทึก");
-    return;
-  }
   
   const btn = document.getElementById('liff-submit-btn');
   const originalHtml = btn.innerHTML;
@@ -195,24 +190,24 @@ async function submitLiffForm() {
     
     const data = await res.json();
     if (!res.ok) {
-      throw new Error(data.detail || 'บันทึกไม่สำเร็จ');
+      throw new Error(data.detail || 'การบันทึกไม่สำเร็จ');
     }
-    
-    // Remember password in localStorage
-    localStorage.setItem('liff_auth_pwd', pwd);
     
     document.getElementById('liff-success-desc').innerText = `อัปเดต ${liffCurrentProject.name} -> ${mName} (${pct}%) เรียบร้อยแล้ว`;
     document.getElementById('liff-success-modal').classList.remove('hidden');
     lucide.createIcons();
     
   } catch (err) {
+    console.error("LIFF submit error:", err);
     alert("เกิดข้อผิดพลาดในการบันทึก: " + err.message);
   } finally {
     btn.disabled = false;
-    btn.innerHTML = originalHtml;
+    btn.innerHTML = `<i data-lucide="check" class="w-5 h-5"></i> <span>บันทึกความคืบหน้าเข้าระบบ</span>`;
     lucide.createIcons();
   }
 }
+
+
 
 function resetLiffForNext() {
   document.getElementById('liff-success-modal').classList.add('hidden');
