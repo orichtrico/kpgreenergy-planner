@@ -540,6 +540,58 @@ class ProjectEngine:
             
         return sorted(result, key=lambda x: x["lot"])
 
+    def recalculate_project_metrics(self, prj: dict):
+        """
+        Recalculates progress %, status, variance %, and actual_start / actual_finish dates
+        Rule: Project actual_finish is ONLY set if ALL milestones with weight > 0 are 100% completed.
+        In that case, actual_finish = latest finish date of milestones with weight > 0.
+        Otherwise, actual_finish = None (shows as '-').
+        """
+        milestones = prj.get("milestones", [])
+        total_act = sum(m["actual_contribution"] for m in milestones)
+        prj["actual_progress_pct"] = round(min(100.0, total_act * 100), 2)
+        prj["variance_pct"] = round(prj["actual_progress_pct"] - prj["planned_progress_pct"], 2)
+        
+        if prj["actual_progress_pct"] >= 99.9:
+            prj["status"] = "COMPLETED"
+            prj["status_th"] = "เสร็จสมบูรณ์"
+        elif prj["variance_pct"] >= 0:
+            prj["status"] = "ON_TRACK"
+            prj["status_th"] = "ตามแผนงาน"
+        elif prj["variance_pct"] >= -10:
+            prj["status"] = "SLIGHT_DELAY"
+            prj["status_th"] = "ล่าช้าเล็กน้อย"
+        else:
+            prj["status"] = "DELAYED"
+            prj["status_th"] = "ล่าช้ากว่าแผน"
+            
+        # Calculate actual_start: minimum start date of any started milestone
+        start_dates = []
+        for m in milestones:
+            d = parse_date(m.get("actual_start"))
+            if d:
+                start_dates.append(d)
+        prj["actual_start"] = min(start_dates).strftime('%Y-%m-%d') if start_dates else None
+        
+        # Calculate actual_finish: ONLY if all active milestones (weight > 0) are completed 100%
+        active_milestones = [m for m in milestones if m.get("weight", 0) > 0]
+        if active_milestones:
+            all_active_completed = all(m.get("actual_pct", 0) >= 0.999 for m in active_milestones)
+        else:
+            all_active_completed = (prj["actual_progress_pct"] >= 99.9)
+            
+        if all_active_completed:
+            finish_dates = []
+            for m in active_milestones:
+                d = parse_date(m.get("actual_finish"))
+                if d:
+                    finish_dates.append(d)
+            prj["actual_finish"] = max(finish_dates).strftime('%Y-%m-%d') if finish_dates else date.today().strftime('%Y-%m-%d')
+        else:
+            prj["actual_finish"] = None
+            
+        prj["s_curve"] = self.generate_project_scurve(prj)
+
     def update_milestone(self, project_id: str, milestone_name: str, actual_pct: float, 
                          actual_start: Optional[str] = None, actual_finish: Optional[str] = None) -> bool:
         if project_id not in self.projects_dict:
@@ -562,23 +614,7 @@ class ProjectEngine:
                 break
                 
         if updated:
-            total_act = sum(m["actual_contribution"] for m in prj["milestones"])
-            prj["actual_progress_pct"] = round(min(100.0, total_act * 100), 2)
-            prj["variance_pct"] = round(prj["actual_progress_pct"] - prj["planned_progress_pct"], 2)
-            if prj["actual_progress_pct"] >= 99.9:
-                prj["status"] = "COMPLETED"
-                prj["status_th"] = "เสร็จสมบูรณ์"
-            elif prj["variance_pct"] >= 0:
-                prj["status"] = "ON_TRACK"
-                prj["status_th"] = "ตามแผนงาน"
-            elif prj["variance_pct"] >= -10:
-                prj["status"] = "SLIGHT_DELAY"
-                prj["status_th"] = "ล่าช้าเล็กน้อย"
-            else:
-                prj["status"] = "DELAYED"
-                prj["status_th"] = "ล่าช้ากว่าแผน"
-                
-            prj["s_curve"] = self.generate_project_scurve(prj)
+            self.recalculate_project_metrics(prj)
             self.save_to_cache()
             
         return updated
@@ -632,23 +668,7 @@ class ProjectEngine:
                         
                 m_idx += 1
                 
-            total_act = sum(m["actual_contribution"] for m in target_prj["milestones"])
-            target_prj["actual_progress_pct"] = round(min(100.0, total_act * 100), 2)
-            target_prj["variance_pct"] = round(target_prj["actual_progress_pct"] - target_prj["planned_progress_pct"], 2)
-            if target_prj["actual_progress_pct"] >= 99.9:
-                target_prj["status"] = "COMPLETED"
-                target_prj["status_th"] = "เสร็จสมบูรณ์"
-            elif target_prj["variance_pct"] >= 0:
-                target_prj["status"] = "ON_TRACK"
-                target_prj["status_th"] = "ตามแผนงาน"
-            elif target_prj["variance_pct"] >= -10:
-                target_prj["status"] = "SLIGHT_DELAY"
-                target_prj["status_th"] = "ล่าช้าเล็กน้อย"
-            else:
-                target_prj["status"] = "DELAYED"
-                target_prj["status_th"] = "ล่าช้ากว่าแผน"
-                
-            target_prj["s_curve"] = self.generate_project_scurve(target_prj)
+            self.recalculate_project_metrics(target_prj)
             updated_projects += 1
             
         self.save_to_cache()
