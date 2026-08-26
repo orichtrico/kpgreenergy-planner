@@ -696,9 +696,16 @@
       </div>
 
       <form id="modal-update-form" onsubmit="handleModalSubmit(event)" class="space-y-4 text-xs">
+        
+        <!-- Security Authorization Banner -->
+        <div class="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 flex items-center gap-2">
+          <i data-lucide="shield-check" class="w-4 h-4 text-amber-600 shrink-0"></i>
+          <span class="text-[11px]">การแก้ไขจะเขียนข้อมูลลง <strong>Google Sheet</strong> และ <strong>Web Dashboard</strong> พร้อมกัน</span>
+        </div>
+
         <div>
           <label class="block font-semibold text-slate-700 mb-1">เลือก Milestone</label>
-          <select id="modal-milestone-select" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-emerald-500"></select>
+          <select id="modal-milestone-select" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-emerald-500 font-medium"></select>
         </div>
 
         <div>
@@ -724,9 +731,21 @@
           </div>
         </div>
 
-        <div class="flex justify-end space-x-2 pt-2">
-          <button type="button" onclick="closeQuickUpdateModal()" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium">ยกเลิก</button>
-          <button type="submit" class="px-5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-semibold shadow-sm">บันทึกข้อมูล</button>
+        <!-- Password Input -->
+        <div class="pt-1">
+          <label class="block font-semibold text-slate-700 mb-1 flex items-center justify-between">
+            <span class="flex items-center gap-1"><i data-lucide="key-round" class="w-3.5 h-3.5 text-slate-500"></i> รหัสผ่านผู้แก้ไข (Editor Password):</span>
+            <span class="text-[10px] text-emerald-600 font-normal">รหัสผ่าน: KPGEditor</span>
+          </label>
+          <input type="password" id="modal-editor-password" placeholder="ใส่รหัสผ่าน KPGEditor เพื่อยืนยัน" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none font-mono">
+        </div>
+
+        <div class="flex justify-end space-x-2 pt-2 border-t border-slate-100">
+          <button type="button" onclick="closeQuickUpdateModal()" class="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium">ยกเลิก</button>
+          <button type="submit" id="modal-submit-btn" class="px-5 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-semibold shadow-sm flex items-center gap-1.5">
+            <i data-lucide="check" class="w-4 h-4"></i>
+            <span>ยืนยันและบันทึกข้อมูล 2-Way</span>
+          </button>
         </div>
       </form>
     </div>

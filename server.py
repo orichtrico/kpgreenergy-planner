@@ -16,6 +16,9 @@ from engine import ProjectEngine
 
 app = FastAPI(title="KPGreenergy Planner", version="1.0.0")
 
+# Security Password for editing
+EDITOR_PASSWORD = "KPGEditor"
+
 # Enable CORS
 app.add_middleware(
     CORSMiddleware,
@@ -44,7 +47,9 @@ class MilestoneUpdateRequest(BaseModel):
     actual_start: Optional[str] = None
     actual_finish: Optional[str] = None
     note: Optional[str] = None
-    updated_by: Optional[str] = "LINE User"
+    updated_by: Optional[str] = "Web Editor"
+    password: Optional[str] = None
+    sheet_url: Optional[str] = None
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_index():
@@ -166,6 +171,13 @@ async def get_phases():
 
 @app.post("/api/update-milestone")
 async def update_milestone(req: MilestoneUpdateRequest):
+    # 1. Verify Password
+    if req.password != EDITOR_PASSWORD:
+        raise HTTPException(
+            status_code=401, 
+            detail="รหัสผ่านไม่ถูกต้อง! กรุณาใส่รหัสผ่าน 'KPGEditor' เพื่อยืนยันการแก้ไขข้อมูล"
+        )
+    
     pct = req.actual_pct
     if pct > 1.0:
         pct = pct / 100.0
@@ -183,9 +195,33 @@ async def update_milestone(req: MilestoneUpdateRequest):
     
     updated_project = engine.projects_dict[req.project_id]
     
+    # 2. Write-back to Google Sheet (if Apps Script Web App URL or Google Sheet is configured)
+    gsheet_synced = False
+    gsheet_msg = ""
+    if req.sheet_url and "script.google.com" in req.sheet_url:
+        try:
+            payload = {
+                "action": "update_milestone",
+                "project_id": updated_project["id"],
+                "project_name": updated_project["name"],
+                "milestone_name": req.milestone_name,
+                "actual_pct": pct,
+                "actual_start": req.actual_start or "",
+                "actual_finish": req.actual_finish or "",
+                "updated_by": req.updated_by or "Web Editor",
+                "note": req.note or "อัปเดตผ่านเว็บ Dashboard (KPGEditor)"
+            }
+            gs_resp = requests.post(req.sheet_url, json=payload, timeout=8)
+            if gs_resp.status_code == 200:
+                gsheet_synced = True
+                gsheet_msg = " และบันทึกลง Google Sheets เรียบร้อยแล้ว"
+        except Exception as e:
+            print(f"Warning: Failed to write to Google Sheet Web App: {e}")
+
     return {
         "success": True,
-        "message": f"Updated {req.milestone_name} to {pct*100:.1f}% successfully",
+        "message": f"อัปเดต {req.milestone_name} เป็น {pct*100:.1f}% สำเร็จ{gsheet_msg}",
+        "gsheet_synced": gsheet_synced,
         "project": {
             "id": updated_project["id"],
             "name": updated_project["name"],
@@ -205,7 +241,6 @@ async def handle_webhook(request: Request):
     
     action = body.get("action") or body.get("event") or ""
     
-    # 1. Update from LINE LIFF or explicit API
     if action in ["update_milestone", "save_progress"]:
         p_id = body.get("project_id")
         p_name = body.get("project_name", "").strip().lower()
@@ -230,7 +265,6 @@ async def handle_webhook(request: Request):
             )
             return {"status": "ok", "updated": eng_res, "project_id": p_id}
 
-    # 2. Live Edit Trigger directly from Google Sheets (onEdit)
     if action in ["sheet_edited", "on_edit"]:
         p_name = str(body.get("project_name", "")).strip().lower()
         m_name = str(body.get("milestone_name", "")).strip()
@@ -266,7 +300,6 @@ async def sync_google_sheet(request: Request):
         if not raw_url:
             raise HTTPException(status_code=400, detail="กรุณาระบุลิงก์ Google Sheet")
         
-        # 1. Google Sheets Document Link (https://docs.google.com/spreadsheets/d/...)
         sheet_match = re.search(r'/spreadsheets/d/([a-zA-Z0-9-_]+)', raw_url)
         if sheet_match:
             sheet_id = sheet_match.group(1)
@@ -297,7 +330,6 @@ async def sync_google_sheet(request: Request):
                 "message": f"ซิงค์ข้อมูลจาก Google Sheets สำเร็จเรียบร้อยแล้ว ({updated_count} โครงการ)"
             }
 
-        # 2. Google Apps Script Web App URL
         headers = {"User-Agent": "Mozilla/5.0"}
         try:
             resp = requests.get(raw_url, headers=headers, timeout=12, allow_redirects=True)
@@ -325,9 +357,8 @@ async def sync_google_sheet(request: Request):
                     for m_s in p_sheet.get("milestones", []):
                         m_name = m_s.get("name")
                         act_pct = float(m_s.get("actual_pct", 0.0))
-                        # Update without saving each loop
                         for m in p_eng.get("milestones", []):
-                            if m["name"].strip() == m_name.strip():
+                            if m["name"].strip().lower() == m_name.strip().lower():
                                 m["actual_pct"] = max(0.0, min(1.0, act_pct))
                                 if m_s.get("actual_start"):
                                     m["actual_start"] = m_s.get("actual_start")
@@ -337,7 +368,6 @@ async def sync_google_sheet(request: Request):
                                 m["actual_contribution"] = round(m["actual_pct"] * m["weight"], 4)
                                 break
                     
-                    # Recalculate
                     total_act = sum(m["actual_contribution"] for m in p_eng["milestones"])
                     p_eng["actual_progress_pct"] = round(min(100.0, total_act * 100), 2)
                     p_eng["variance_pct"] = round(p_eng["actual_progress_pct"] - p_eng["planned_progress_pct"], 2)

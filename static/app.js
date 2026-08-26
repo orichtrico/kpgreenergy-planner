@@ -829,6 +829,12 @@ function selectAndOpenProject(prjId) {
 function openQuickUpdateModal(milestoneName, pctVal = 100, actStart = '', actFinish = '') {
   if (!currentProject) return;
   
+  const pwdInput = document.getElementById('modal-editor-password');
+  const sessionPwd = sessionStorage.getItem('kpg_auth_pwd');
+  if (pwdInput && sessionPwd) {
+    pwdInput.value = sessionPwd;
+  }
+  
   document.getElementById('modal-subtitle').innerText = `โครงการ: ${currentProject.name}`;
   const mSelect = document.getElementById('modal-milestone-select');
   mSelect.innerHTML = '';
@@ -869,6 +875,19 @@ async function handleModalSubmit(e) {
   const pct = parseFloat(document.getElementById('modal-pct-slider').value);
   const startD = document.getElementById('modal-start-date').value;
   const finishD = document.getElementById('modal-finish-date').value;
+  const pwdInput = document.getElementById('modal-editor-password');
+  const pwd = pwdInput ? pwdInput.value.trim() : '';
+  const savedSheetUrl = localStorage.getItem('kpgreenergy_gsheet_url') || '';
+  
+  if (!pwd) {
+    showToast('กรุณาใส่รหัสผ่าน KPGEditor เพื่อบันทึกข้อมูล', 'error');
+    return;
+  }
+  
+  const btn = document.getElementById('modal-submit-btn');
+  const originalHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = `<span class="animate-spin mr-1">⏳</span> กำลังบันทึก...`;
   
   try {
     const res = await fetch('/api/update-milestone', {
@@ -879,22 +898,35 @@ async function handleModalSubmit(e) {
         milestone_name: mName,
         actual_pct: pct,
         actual_start: startD,
-        actual_finish: finishD
+        actual_finish: finishD,
+        password: pwd,
+        sheet_url: savedSheetUrl,
+        updated_by: 'Web Editor'
       })
     });
     
-    if (!res.ok) throw new Error("Failed to update");
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.detail || 'บันทึกไม่สำเร็จ');
+    }
     
     closeQuickUpdateModal();
-    showToast(`อัปเดต ${mName} เป็น ${pct}% สำเร็จ`);
+    showToast(data.message || `อัปเดต ${mName} สำเร็จแล้ว!`);
     
-    // Refresh
+    // Remember password in session
+    sessionStorage.setItem('kpg_auth_pwd', pwd);
+    
+    // Refresh UI
     await loadInitialData();
     await selectProject(currentProject.id);
     
   } catch (err) {
     console.error(err);
-    showToast("เกิดข้อผิดพลาดในการบันทึกข้อมูล", "error");
+    showToast(err.message || 'เกิดข้อผิดพลาดในการบันทึกข้อมูล', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = originalHtml;
+    lucide.createIcons();
   }
 }
 
